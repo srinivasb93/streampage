@@ -1,0 +1,434 @@
+import pandas as pd
+import numpy as np
+import datetime as dt
+import statsmodels.api as sm
+from nsetools import Nse
+from common_utils import read_write_sql_data as rd
+
+dt_today = dt.date.today().strftime('%d%m%Y')
+adhoc_date = False
+analysis_days = 365
+
+if not adhoc_date:
+    analysis_start_date = dt.date.today() - dt.timedelta(days=analysis_days)
+    analysis_end_date = dt.date.today()
+else:
+    analysis_start_date = dt.date(2024, 3, 5) - dt.timedelta(days=analysis_days)
+    analysis_end_date = dt.date(2024, 3, 5)
+analysis_period = 'by_date'
+
+df5 = pd.DataFrame()
+df6 = pd.DataFrame()
+nse = Nse()
+
+conn = rd.create_connection()
+
+
+def wwma(values, n_days):
+    return values.ewm(alpha=1 / n_days, adjust=False).mean()
+
+
+def atr(df, n_days=14):
+    """
+    function to calculate the average true range
+    """
+    data_copy = df.copy()
+    high = data_copy['High']
+    low = data_copy['Low']
+    close = data_copy['Close']
+    data_copy['tr0'] = abs(high - low)
+    data_copy['tr1'] = abs(high - close.shift())
+    data_copy['tr2'] = abs(low - close.shift())
+    tr = data_copy[['tr0', 'tr1', 'tr2']].max(axis=1)
+    avg_true_range = wwma(tr, n_days)
+    # avg_true_range = tr.rolling(n).mean()
+    return round(avg_true_range, 2)
+
+
+def slope(ser, n):
+    """
+    function to calculate the slope of regression line for n consecutive points on a plot
+    """
+    #     ser = (ser - ser.min())/(ser.max() - ser.min())
+    x = np.array(range(len(ser)))
+    #     x = (x - x.min())/(x.max() - x.min())
+    slopes = [i * 0 for i in range(n - 1)]
+    reg_prices = [i * 0 for i in range(n - 1)]
+    for i in range(n, len(ser) + 1):
+        y_scaled = ser[i - n:i]
+        x_scaled = x[i - n:i]
+        x_scaled = sm.add_constant(x_scaled)
+        model = sm.OLS(y_scaled, x_scaled)
+        results = model.fit()
+        results1 = model.predict(results.params)
+        slopes.append(results.params[-1])
+        reg_prices.append(results1[-1])
+    # slope_angle = (np.rad2deg(np.arctan(np.array(slopes))))
+    # return slope_angle, reg_prices
+    return reg_prices
+
+
+required_index = 'NIFTY_50_REF'
+stock_list = rd.get_table_data(selected_database="NSEDATA",
+                               selected_table=required_index)['Symbol'].unique().tolist()
+stock_list.remove(" ".join(required_index.split('_')[:-1]))
+
+for stock in stock_list:
+    if '&' in stock or '-' in stock:
+        stock = stock.replace('&', '').replace('-', '')
+    print(f"Processing data for the stock - {stock}")
+
+    if analysis_period == 'by_date':
+        query = f"SELECT * FROM dbo.{stock} WHERE DATE" \
+                f" BETWEEN '{analysis_start_date}' AND '{analysis_end_date}' ORDER BY DATE ASC"
+    else:
+        query = f"SELECT top {analysis_days} * FROM dbo." + stock + " ORDER BY DATE DESC"
+    data = pd.read_sql_query(query, con=conn, parse_dates=True)
+    data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m-%d')
+    if analysis_period != 'by_date':
+        data.sort_values(by=['Date'], ascending=False, inplace=True)
+    data['Symbol'] = stock
+    data['Close_Chg'] = round(data['Close'].pct_change() * 100, 2)
+    data['Range'] = round(data['High'] - data['Low'], 2)
+    data['HH'] = data['High'] - data['High'].shift()
+    data['LL'] = data['Low'] - data['Low'].shift()
+    data['High_10'] = data['High'].rolling(10, min_periods=10).max()
+    data['Low_10'] = data['Low'].rolling(10, min_periods=10).min()
+
+    data['Break_High_10'] = data['Close'] > data['High_10'].shift(1)
+    data['Break_Low_10'] = data['Close'] < data['Low_10'].shift(1)
+
+    data['High_20'] = data['High'].rolling(20, min_periods=20).max()
+    data['Low_20'] = data['Low'].rolling(20, min_periods=20).min()
+
+    data['Break_High_20'] = data['Close'] > data['High_20'].shift(1)
+    data['Break_Low_20'] = data['Close'] < data['Low_20'].shift(1)
+
+    data['ATR'] = atr(data[['High', 'Low', 'Close']], 14)
+    data['Range_ATR'] = round(data['Range'] / data['ATR'], 1)
+
+    data['Vol_Avg10'] = round(data['Volume'].rolling(10, min_periods=10).mean(), 0)
+    data['Vol_Avg20'] = round(data['Volume'].rolling(20, min_periods=20).mean(), 0)
+
+    data['EMA_20'] = round(data['Close'].ewm(span=20, min_periods=20).mean(), 2)
+    data['EMA_10'] = round(data['Close'].ewm(span=10, min_periods=10).mean(), 2)
+    if analysis_days >= 200:
+        data['EMA_200'] = round(data['Close'].ewm(span=200).mean(), 2)
+
+    data['Reg_5'] = slope(data['Close'], 5)
+    data['Reg_10'] = slope(data['Close'], 10)
+    data['Diff_EM10_20'] = data['EMA_10'] - data['EMA_20']
+    data['EM_Diff_By_ATR'] = round(data['Diff_EM10_20'] / data['ATR'], 2)
+    data['Close_EM10'] = data['Close'] - data['EMA_10']
+    data['Close_EM20'] = data['Close'] - data['EMA_20']
+    data['Reg_5_Chg'] = data['Reg_5'] - data['Reg_5'].shift()
+    data['Reg_Cross'] = data['Reg_5'] - data['Reg_10']
+    data['Vol_Abv_Avg10'] = round(data['Volume'] / data['Vol_Avg10'], 2)
+    data['Vol_Abv_Avg20'] = round(data['Volume'] / data['Vol_Avg20'], 2)
+    data['Cls_Abv_EMA20'] = data['Close'] - data['EMA_20']
+    data['Cls_Abv_EMA10'] = data['Close'] - data['EMA_10']
+
+    if analysis_days >= 200:
+        data['Cls_Abv_EMA200'] = data['Close'] - data['EMA_200']
+
+    data['Cls_Abv_Reg5'] = data['Close'] - data['Reg_5']
+
+    ema_cnt_chk = curr_support = prev_support = curr_res = prev_res = fib382 = fib50 = fib618 = 0.0
+    data['Curr_Supp'] = data['Prev_Supp'] = data['Curr_Res'] = data['Prev_Res'] = 0.0
+
+    data['Fib_Status'] = data['Resistance'] = data['Support'] = ''
+
+    for rdata in data.itertuples():
+        k = rdata.Index + 2
+        poc_bl = poc_br = 0
+
+        if k < len(data.index):
+            data.loc[k, 'EMA20_Sig'] = 'Close_GT_20EMA' if data.loc[k, 'Cls_Abv_EMA20'] >= 0 else 'Close_LT_20EMA'
+            if data.loc[k, 'Cls_Abv_EMA20'] >= 0 > data.loc[k - 1, 'Cls_Abv_EMA20']:
+                data.loc[k, 'EMA20_Sig'] = 'Cross_Abv_20EMA'
+            elif data.loc[k, 'Cls_Abv_EMA20'] < 0 <= data.loc[k - 1, 'Cls_Abv_EMA20']:
+                data.loc[k, 'EMA20_Sig'] = 'Cross_Blw_20EMA'
+
+            if data.loc[k, 'EMA20_Sig'] in ['Cross_Abv_20EMA', 'Close_GT_20EMA']:
+                ema_cnt_chk += 1
+                poc_bl += 1
+                data.loc[k, 'EMA20_Cnt'] = ema_cnt_chk
+            if data.loc[k, 'EMA20_Sig'] in ['Cross_Blw_20EMA', 'Close_LT_20EMA']:
+                ema_cnt_chk = 0
+                poc_br += 1
+                data.loc[k, 'EMA20_Cnt'] = ema_cnt_chk
+
+            data.loc[k, 'EMA10_Sig'] = 'Close_GT_10EMA' if data.loc[k, 'Cls_Abv_EMA10'] >= 0 else 'Close_LT_10EMA'
+            if data.loc[k, 'Cls_Abv_EMA10'] >= 0 > data.loc[k - 1, 'Cls_Abv_EMA10']:
+                data.loc[k, 'EMA10_Sig'] = 'Cross_Abv_10EMA'
+            elif data.loc[k, 'Cls_Abv_EMA10'] < 0 <= data.loc[k - 1, 'Cls_Abv_EMA10']:
+                data.loc[k, 'EMA10_Sig'] = 'Cross_Blw_10EMA'
+
+            data.loc[k, 'Reg5_Sig'] = 'Close_GT_Reg5' if data.loc[k, 'Cls_Abv_Reg5'] >= 0 else 'Close_LT_Reg5'
+            if data.loc[k, 'Low'] < data.loc[k, 'Reg_5'] <= data.loc[k, 'Close']:
+                data.loc[k, 'Reg5_Sig'] = 'Close_CrossUp_Reg5'
+            elif data.loc[k, 'High'] > data.loc[k, 'Reg_5'] >= data.loc[k, 'Close']:
+                data.loc[k, 'Reg5_Sig'] = 'Close_CrossDn_Reg5'
+
+            if 1 <= data.loc[k, 'Vol_Abv_Avg10'] <= 1.5:
+                data.loc[k, 'Vol10_Sig'] = 'Above Avg Volume'
+            elif data.loc[k, 'Vol_Abv_Avg10'] > 1.5:
+                data.loc[k, 'Vol10_Sig'] = 'Super Volume'
+            else:
+                data.loc[k, 'Vol10_Sig'] = 'Normal Volume'
+
+            if data.loc[k, 'Reg_Cross'] >= 0 > data.loc[k - 1, 'Reg_Cross']:
+                data.loc[k, 'Reg_Cross_Sig'] = 'Cross_Up'
+            elif data.loc[k, 'Reg_Cross'] < 0 <= data.loc[k - 1, 'Reg_Cross']:
+                data.loc[k, 'Reg_Cross_Sig'] = 'Cross_Down'
+            elif data.loc[k, 'Reg_Cross'] >= 0 and data.loc[k - 1, 'Reg_Cross'] >= 0:
+                data.loc[k, 'Reg_Cross_Sig'] = 'Reg5_Abv_Reg10'
+            elif data.loc[k, 'Reg_Cross'] < 0 and data.loc[k - 1, 'Reg_Cross'] < 0:
+                data.loc[k, 'Reg_Cross_Sig'] = 'Reg5_Blw_Reg10'
+
+            if data.loc[k, 'HH'] >= 0 and data.loc[k, 'LL'] >= 0:
+                data.loc[k, 'High_Low'] = 'HH_HL'
+                poc_bl += 1
+            elif data.loc[k, 'HH'] >= 0 > data.loc[k, 'LL']:
+                data.loc[k, 'High_Low'] = 'HH_LL'
+                if data.loc[k, 'Close'] > data.loc[k - 1, 'Close']:
+                    poc_bl += 1
+                elif data.loc[k, 'Close'] < data.loc[k - 1, 'Close']:
+                    poc_br += 1
+            elif data.loc[k, 'HH'] < 0 and data.loc[k, 'LL'] < 0:
+                data.loc[k, 'High_Low'] = 'LH_LL'
+                poc_br += 1
+            elif data.loc[k, 'HH'] < 0 <= data.loc[k, 'LL']:
+                data.loc[k, 'High_Low'] = 'LH_HL'
+                poc_bl += .5
+
+            supp_cond = data.loc[k, 'Reg_5_Chg'] > 0 >= data.loc[k - 1, 'Reg_5_Chg'] >= data.loc[
+                k - 2, 'Reg_5_Chg']
+            if supp_cond:
+                prev_support = curr_support
+                curr_support = data.loc[k - 1, 'Reg_5']
+                data.loc[k, 'Prev_Supp'] = prev_support
+                data.loc[k, 'Curr_Supp'] = curr_support
+                # Condition for recent HH and HL
+                if prev_support < curr_support < data.loc[k, 'Low'] and curr_res > prev_res:
+                    data.loc[k, 'Support'] = 'Price_Abv_Supp'
+                    poc_bl += 1
+                # Condition for recent LH and HL where cadle is above current LH
+                elif curr_support > prev_support and curr_res < prev_res and data.loc[k, 'Low'] > curr_res:
+                    data.loc[k, 'Support'] = 'Price_Abv_Cur_Res'
+                    poc_bl += 1
+                elif curr_support < prev_support and curr_res < prev_res and (
+                        data.loc[k, 'Low'] > prev_support or data.loc[k, 'Low'] > curr_res) and data.loc[
+                    k - 1, 'Close'] < prev_support:
+                    data.loc[k, 'Support'] = 'Price_Abv_Prev_Sup'
+                    poc_bl += .5
+
+            res_cond = data.loc[k, 'Reg_5_Chg'] < 0 <= data.loc[k - 1, 'Reg_5_Chg'] <= data.loc[
+                k - 2, 'Reg_5_Chg']
+            if res_cond:
+                prev_res = curr_res
+                curr_res = data.loc[k - 1, 'Reg_5']
+                data.loc[k, 'Prev_Res'] = prev_res
+                data.loc[k, 'Curr_Res'] = curr_res
+                if prev_res > curr_res > data.loc[k, 'High'] and curr_support < prev_support < data.loc[
+                    k - 1, 'Close']:
+                    data.loc[k, 'Resistance'] = 'Price_Blw_Res'
+                    poc_br += 1
+                elif curr_res < prev_res and prev_support > curr_support > data.loc[k, 'High'] <= data.loc[
+                    k - 1, 'Close']:
+                    data.loc[k, 'Resistance'] = 'Price_Blw_Cur_Sup'
+                    poc_br += 1
+
+            if curr_support < prev_support and curr_res < prev_res and (
+                    data.loc[k, 'Low'] < prev_support or data.loc[k, 'Low'] < curr_res) and \
+                    (data.loc[k, 'Close'] >= curr_res or data.loc[k, 'Close'] >= prev_support) and data.loc[
+                k - 1, 'Close'] < prev_support:
+                data.loc[k, 'Support'] = 'Price_Crs_Abv_Prev_Sup'
+                poc_bl += .5
+            elif curr_support > prev_support and curr_res > prev_res and data.loc[k, 'Low'] < curr_support\
+                    and data.loc[k, 'Close'] >= curr_support:
+                data.loc[k, 'Support'] = 'Price_Crs_Abv_Supp'
+                poc_bl += 1
+            elif curr_support > prev_support and prev_res > curr_res > data.loc[k, 'Low'] <= data.loc[
+                k, 'Close'] > data.loc[k - 1, 'Close']:
+                data.loc[k, 'Support'] = 'Price_Crs_Abv_Cur_Res'
+                poc_bl += 1
+
+            if prev_res > curr_res > data.loc[k, 'Close'] and data.loc[k, 'High'] > curr_res < data.loc[
+                k - 1, 'Close']:
+                data.loc[k, 'Resistance'] = 'Price_Crs_Blw_Res'
+                poc_br += 1
+            elif curr_res > prev_res > data.loc[k, 'Close'] and data.loc[k, 'High'] > prev_res < data.loc[
+                k - 1, 'Close']:
+                data.loc[k, 'Resistance'] = 'Price_Crs_Blw_Prev_Res'
+                poc_br += .5
+
+            if data.loc[k - 1, 'Close'] < data.loc[k - 1, 'High_10'] and data.loc[k, 'Close'] > data.loc[
+                k - 1, 'High_10'] and data.loc[k, 'Reg_5'] > data.loc[k, 'Reg_10']:
+                data.loc[k, 'Breakout_10'] = 'Breakout_10_Up'
+                poc_bl += 1
+            elif data.loc[k - 1, 'Close'] > data.loc[k - 1, 'Low_10'] and data.loc[k, 'Close'] < data.loc[
+                k - 1, 'Low_10'] and data.loc[k, 'Reg_5'] < data.loc[k, 'Reg_10']:
+                data.loc[k, 'Breakout_10'] = 'Breakout_10_Down'
+                poc_br += 1
+            if data.loc[k - 1, 'Close'] < data.loc[k - 1, 'High_20'] and data.loc[k, 'Close'] > data.loc[
+                k - 1, 'High_20'] and data.loc[k, 'Reg_5'] > data.loc[k, 'Reg_10']:
+                data.loc[k, 'Breakout_20'] = 'Breakout_20_Up'
+                poc_bl += 1
+            elif data.loc[k - 1, 'Close'] > data.loc[k - 1, 'Low_20'] and data.loc[k, 'Close'] < data.loc[
+                k - 1, 'Low_20'] and data.loc[k, 'Reg_5'] < data.loc[k, 'Reg_10']:
+                data.loc[k, 'Breakout_20'] = 'Breakout_20_Down'
+                poc_br += 1
+
+            res_break_chk = data.loc[k, 'Low'] < curr_res and data.loc[k - 1, 'Close'] < curr_res and data.loc[
+                k - 2, 'Close'] < curr_res and data.loc[k, 'Close'] >= curr_res
+            pres_break_chk = data.loc[k, 'Low'] < prev_res and data.loc[k - 1, 'Close'] < prev_res and data.loc[
+                k - 2, 'Close'] < prev_res and data.loc[k, 'Close'] >= prev_res
+            if res_break_chk:
+                data.loc[k, 'Break_Sup_Res'] = 'Cur_Res_Broken_Up'
+                poc_bl += 1
+            elif pres_break_chk:
+                data.loc[k, 'Break_Sup_Res'] = 'Prev_Res_Broken_Up'
+                poc_bl += 1
+            elif res_break_chk and pres_break_chk:
+                data.loc[k, 'Break_Sup_Res'] = 'Both_Res_Broken_Up'
+                poc_bl += 1
+
+            sup_break_chk = data.loc[k, 'High'] > curr_support and data.loc[k - 1, 'Close'] > curr_support and data.loc[
+                k - 2, 'Close'] > curr_support and data.loc[k, 'Close'] < curr_support
+            psup_break_chk = data.loc[k, 'High'] > prev_support and data.loc[k - 1, 'Close'] > prev_support and \
+                             data.loc[k - 2, 'Close'] > prev_support and data.loc[k, 'Close'] < prev_support
+            if sup_break_chk:
+                data.loc[k, 'Break_Sup_Res'] = 'Cur_Sup_Broken_Down'
+                poc_br += 1
+            elif psup_break_chk:
+                data.loc[k, 'Break_Sup_Res'] = 'Prev_Sup_Broken_Down'
+                poc_br += 1
+            elif sup_break_chk and psup_break_chk:
+                data.loc[k, 'Break_Sup_Res'] = 'Both_Sup_Broken_Down'
+                poc_br += 1
+
+            if curr_res > prev_res and curr_support > prev_support:
+                diff_price = data.loc[k, 'High_10'] - data.loc[k, 'Low_20']
+                fib382 = data.loc[k, 'Fib_382'] = data.loc[k, 'High_10'] - diff_price * .382
+                fib50 = data.loc[k, 'Fib_50'] = data.loc[k, 'High_10'] - diff_price * .5
+                fib618 = data.loc[k, 'Fib_618'] = data.loc[k, 'High_10'] - diff_price * .618
+
+            if curr_res > prev_res:
+                if data.loc[k, 'Low'] < fib382 < data.loc[k, 'Close']:
+                    data.loc[k, 'Fib_Status'] = 'Cls_Crs_Abv_F382'
+                    poc_bl += 1
+                if data.loc[k, 'Low'] < fib50 < data.loc[k, 'Close']:
+                    data.loc[k, 'Fib_Status'] = 'Cls_Crs_Abv_F50'
+                    poc_bl += 1
+                if data.loc[k, 'Low'] < fib618 < data.loc[k, 'Close']:
+                    data.loc[k, 'Fib_Status'] = 'Cls_Crs_Abv_F618'
+                    poc_bl += 1
+            data.loc[k, 'Bull_Signal'] = poc_bl
+            data.loc[k, 'Bear_Signal'] = poc_br
+
+    data.to_csv('data_'+stock+'.csv',index=False)
+    load_msg = rd.load_sql_data(data_to_load=data, table_name='data_'+stock)
+    print(load_msg)
+
+    out_cols = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Close_Chg', 'ATR', 'Vol10_Sig', 'Range_ATR',
+                'Fib_Status', 'EMA20_Sig', 'EMA20_Cnt', 'High_Low', 'Support', 'Break_Sup_Res', 'Breakout_10',
+                'Resistance', 'Breakout_20', 'Bull_Signal', 'Bear_Signal']
+    df5 = df5.append(data.tail(1))
+    df5 = df5[out_cols]
+    df6 = df6.append(data.tail(50))
+    df6 = df6[out_cols]
+    # data.to_csv(stock + "_" + str(dt_today) + ".csv", index=False)
+    # data[out_cols].to_csv(stock + "_" + str(dt_today) + ".csv", index=False)
+
+# df5.to_csv("Results_" + stock_idx+"_"+ str(dt_today) + ".csv", index=False)
+# df6.to_csv("Results50_" + stock_idx+"_"+ str(dt_today) + ".csv", index=False)
+
+ema_20_abv = ['Close_GT_20EMA', 'Cross_Abv_20EMA']
+ema_20_blw = ['Close_LT_20EMA', 'Cross_Blw_20EMA']
+
+load_msg = rd.load_sql_data(df5, table_name='EOD_ANALYSIS')
+print(load_msg)
+
+print("List of Bullish Stocks")
+print(df5[(df5['Bull_Signal'] > 2) & (df5['Bear_Signal'] <= 1) & (df5['EMA20_Sig'].isin(ema_20_abv))])
+print("========================")
+print("List of Bearish Stocks")
+print(df5[(df5['Bull_Signal'] <= 1) & (df5['Bear_Signal'] > 2) & (df5['EMA20_Sig'].isin(ema_20_blw))])
+print("========================")
+
+# df4.to_csv("Results_Ind_Stock.csv",index=False)
+# engine = create_engine("mssql+pyodbc://scott:tiger@myhost:port/TRAINING?driver=SQL+Server+Native+Client+10.0")
+# df5.to_sql('STOCK_DATA',engine)
+print('Report is generated successfully')
+
+# df5.reset_index(inplace=True)
+
+fib_stocks = []
+ema_20_stocks = []
+supp_crs_stocks = []
+reg_crs_stocks = []
+
+fib_stocks = df5['Symbol'][df5['Fib_Status'] == 'Cls_Crs_Abv_F50'].to_list()
+
+ema_20_stocks = df5['Symbol'][df5['EMA20_Sig'].isin(ema_20_abv)].to_list()
+# ema_10_chk = ['Close_GT_10EMA','Cross_Abv_10EMA']
+# ema_10_stocks = df5['Symbol'][df5['EMA10_Sig'].isin(ema_10_chk)].to_list()
+vol_check_list = df5['Symbol'][df5['Vol10_Sig'] == 'Vol_GT_Avg10'].to_list()
+supp_cond_list = ['Price_Abv_Supp', 'Price_Abv_Cur_Res', 'Price_Abv_Prev_Sup', 'Price_Crs_Abv_Supp',
+                  'Price_Crs_Abv_Prev_Sup', 'Price_Crs_Abv_Cur_Res']
+supp_crs_stocks = df5['Symbol'][df5['Support'].isin(supp_cond_list)].to_list()
+
+print('Stocks which are at Support Levels')
+print(supp_crs_stocks)
+print('************************************')
+print('Stocks above 20 day EMA')
+print(ema_20_stocks)
+print('************************************')
+print('Stocks with greater Volume')
+print(vol_check_list)
+print('************************************')
+print('Stocks at Important Fibanocci levels')
+print(fib_stocks)
+print('************************************')
+# print("Stocks with missing data")
+# print(missing_stocks)
+#
+# strgy_df = pd.DataFrame(stock_list, columns=['Symbol', 'Strategy'])
+#
+# df5['Close'] = round(df5['Close'], 2)
+# df5['Qty'] = 50000 / df5['Close']
+# df5['Qty'] = df5['Qty'].apply(lambda x: math.floor(x))
+# df5['Status'] = ''
+# df5['Buy Price'] = 0
+# df5['Sell Price'] = 0
+# df5['PnL'] = df5['Qty'] * (df5['Sell Price'] - df5['Buy Price'])
+# df5['SL1'] = round(df5['Close'].apply(lambda x: (x - .02 * x)), 2)
+# df5['SL2'] = round(df5['Close'].apply(lambda x: (x - .01 * x)), 2)
+# df5['Tgt_1'] = round(df5['Close'].apply(lambda x: (x + .01 * x)), 2)
+# df5['Tgt_2'] = round(df5['Close'].apply(lambda x: (x + .02 * x)), 2)
+# df5['Tgt_3'] = round(df5['Close'].apply(lambda x: (x + .03 * x)), 2)
+# df5['Tgt_3.5'] = round(df5['Close'].apply(lambda x: (x + .035 * x)), 2)
+# df5['Tgt_4'] = round(df5['Close'].apply(lambda x: (x + .04 * x)), 2)
+# df5['Risk'] = round(df5['Qty'] * (df5['Close'] - df5['SL1']), 2)
+# df5['Result'] = ''
+#
+# result = pd.merge(df5, strgy_df, on='Symbol')
+#
+# result_disp_cols = ['Date', 'Symbol', 'Strategy', 'Qty', 'Close', 'SL1', 'Tgt_4', 'Long_Price']
+# result_cols = ['Date', 'Symbol', 'Strategy', 'Status', 'Qty', 'Close', 'Buy Price', 'SL1', 'SL2', 'Tgt_1', 'Tgt_2',
+#                'Tgt_3', 'Tgt_3.5', 'Tgt_4', 'Sell Price', 'PnL', 'Risk', 'Result']
+#
+# result_display = result.loc[:, result_disp_cols]
+#
+# result_store = result.loc[:, result_cols]
+# result_store = result_store.append(tradebook, ignore_index=True, sort=False)
+# result_store.drop_duplicates(subset=['Date', 'Symbol', 'Strategy'], keep='last', inplace=True)
+# result_store.to_csv('Tradebook' + dt_today + '.csv', index=False)
+#
+# print(result_display[['Date', 'Symbol', 'Strategy', 'Qty', 'Close', 'SL1', 'Tgt_4']] \
+#           [(result_display['Strategy'] != 'Long_Entry') | (result_display['Strategy'] != 'Long_Exit')])
+#
+# print(result_display[['Date', 'Symbol', 'Strategy', 'Long_Price']][
+#           (result_display['Strategy'] == 'Long_Entry') | (result_display['Strategy'] == 'Long_Exit')])
+# # print(result_store)

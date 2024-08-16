@@ -1,0 +1,78 @@
+/* Move block container higher */
+div.block-container.st-emotion-cache-1jicfl2.ea3mdgi5 {
+  margin-top: -1em;
+  margin-left: -7em;
+}
+
+/*
+div.topbar {
+  padding: -5em;
+}
+*/
+
+/* Adjustments for the logo image*/
+
+img {
+  display: block;
+  margin-top: 1.5em;
+}
+
+/* Centering text in each gray box */
+/*
+div.element-container.st-emotion-cache-1wtkqmw.e1f1d6gn4 {
+  text-align: center;
+}
+*/
+
+/* Third line of Row */
+div.css-wnm74r.e16fv1kl3 {
+  margin-left: 30%;
+  margin-right: 20%;
+}
+
+/* Summary PnL metrics */
+div.st-emotion-cache-bzyszk.e1f1d6gn3 {
+    background-color: #204364;
+    padding: .5% .5% .5% .5%;
+    border-radius: 5px;
+}
+
+/* Market Snapshot Nifty Metrics*/
+div.st-emotion-cache-1b2d4l5.e1f1d6gn3 {
+    background-color: #223574;
+    padding: .5% .5% .5% .5%;
+    border-radius: 5px;
+}
+
+/* Summary Nifty metrics*/
+div.st-emotion-cache-yksnv9.e1f1d6gn3 {
+    background-color: #241134;
+    padding: .5% .5% .5% .5%;
+    border-radius: 5px;
+}
+
+/* Market Snapshot Sectors data*/
+div.st-emotion-cache-19xyx4a.e1f1d6gn3 {
+    background-color: #223354;
+    padding: .5% .5% .5% .5%;
+    border-radius: 5px;
+}
+
+
+
+/* Hide hamburger menu and footer */
+div.css-r698ls.e8zbici2 {
+  display: none;
+}
+
+footer.css-ipbk5a.egzxvld4 {
+  display: none;
+}
+
+footer.css-12gp8ed.eknhn3m4 {
+  display: none;
+}
+
+div.vg-tooltip-element {
+  display: none;
+}

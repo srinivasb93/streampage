@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/streampage.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/common_utils/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/common_utils/read_write_sql_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/common_utils/run_python_script.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/common_utils/utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/dataload.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/market_snapshot.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/portfolio.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/Stock_History.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/adhoc data.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/dummy1.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/get_sql_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/nsetools_exp.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/ohlcv.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/sample.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/stock_split.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/testing1.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Analysis_all_strategy1.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Daily_Batch_Trade.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Daily_Trade.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/EOD_analysis.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/EOD_analysis_latest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_ASIANPAINT.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_BAJFINANCE.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_HDFCBANK.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_HINDUNILVR.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_ICICIBANK.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_INFY.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_ITC.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_KOTAKBANK.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_MOTHERSON.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_NESTLEIND.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_Overall_Reg_Latest_NIFTY_INFY.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_PIDILITIND.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_RELAXO.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_RELIANCE.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_SONATSOFTW.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_TCS.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/Reg_Latest_NIFTY_INFY/Results_TITAN.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/app_dashboard.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/app_testing.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/backtest_strategy.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/styles.css" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/archive/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/archive/daily_data_load_archive.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/backtest_strategy/SmaCross.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/backtest_strategy/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/backtest_strategy/backtest1.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/candle/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/candle/find_candle.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/get_market_data/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/get_market_data/market_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/logfiles/DATALOAD.log" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/logfiles/MF_HISTDATA_LOAD.log" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/long_term/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/long_term/long_continuous_track.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/long_term/long_term_invest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/long_term/long_working.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/long_term/monthly_investment.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/get_mf_sql_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/mf_daily_snapshot.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/mf_data_append.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/mf_details_load.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/mf_hist_data_load.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/mf_snapshot_with_prev_nav.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/mf_data_load/mf_weekly_monthly_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/selenium_file.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/DATA_APPEND_BHAV_INDICES.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/adhoc_code.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/bhav_copy_extract.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/combine_bonus_split_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_load.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_update.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/data_append_bhav.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/data_append_nsepy.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/data_append_yf.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/data_load_to_sql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/extract_stock_split.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/get_latest_index_details.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/get_monthly_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/get_stock_sql_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/get_weekly_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/index_PE_history.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/load_index_details.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_dataload.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/bhavcopy_downloader.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/bonus_factor.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/bse_corp_actions_download.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/dividend_factor.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/fetch_returns_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/getting_nav_data_in_python.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/portfolio_analysis.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/resample_daily_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/split_factor.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_bonus_split_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_portfolio.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/stock_analysis.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/streamlit_app.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/styles.css" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_app.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_file.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/trading.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 1
+}</component>
+  <component name="ProjectId" id="2iNKV2k40AA1x56g9GLTkswybz4" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
+    &quot;Python.bonus_factor.executor&quot;: &quot;Run&quot;,
+    &quot;Python.bse_corp_actions_download.executor&quot;: &quot;Run&quot;,
+    &quot;Python.combine_bonus_split_data.executor&quot;: &quot;Run&quot;,
+    &quot;Python.daily_data_load.executor&quot;: &quot;Run&quot;,
+    &quot;Python.dividend_factor.executor&quot;: &quot;Run&quot;,
+    &quot;Python.dummy1.executor&quot;: &quot;Run&quot;,
+    &quot;Python.get_quarter_year_data.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.load_agg_data (1).executor&quot;: &quot;Run&quot;,
+    &quot;Python.market_data.executor&quot;: &quot;Run&quot;,
+    &quot;Python.mf_hist_data_load.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.mf_snapshot_with_prev_nav.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.nsepy_hist_data_load.executor&quot;: &quot;Run&quot;,
+    &quot;Python.nsepy_index_dataload.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.portfolio.executor&quot;: &quot;Run&quot;,
+    &quot;Python.selenium_file.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.split_factor.executor&quot;: &quot;Run&quot;,
+    &quot;Python.streamlit.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.streamlit_app.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test_file.executor&quot;: &quot;Run&quot;,
+    &quot;Python.trading.executor&quot;: &quot;Run&quot;,
+    &quot;Python.update_bonus_split_data.executor&quot;: &quot;Run&quot;,
+    &quot;Python.utils.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/sba400/MyProject/streampage/python_scripts/stocks_data_load/utilities&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\sba400\MyProject\streampage\python_scripts\stocks_data_load\utilities" />
+      <recent name="C:\Users\sba400\MyProject\streampage" />
+      <recent name="C:\Users\sba400\MyProject\streampage\python_scripts\stocks_data_load" />
+      <recent name="C:\Users\sba400\MyProject\streampage\common_utils" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\sba400\MyProject\streampage" />
+      <recent name="C:\Users\sba400\MyProject\streampage\pages" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.trading">
+    <configuration name="daily_data_load" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="streampage" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/python_scripts/stocks_data_load" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_load.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="load_agg_data (1)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="streampage" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/python_scripts/stocks_data_load" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="nsepy_hist_data_load" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="streampage" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/python_scripts/stocks_data_load" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="nsepy_index_dataload" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="streampage" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/python_scripts/stocks_data_load" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="streamlit" type="PythonConfigurationType" factoryName="Python">
+      <module name="streampage" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
+      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/streamlit_app.py" />
+      <option name="PARAMETERS" value="python -m streamlit run" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="trading" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="streampage" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/trading.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Python.streamlit" />
+      <item itemvalue="Python.daily_data_load" />
+      <item itemvalue="Python.load_agg_data (1)" />
+      <item itemvalue="Python.nsepy_hist_data_load" />
+      <item itemvalue="Python.nsepy_index_dataload" />
+      <item itemvalue="Python.trading" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.trading" />
+        <item itemvalue="Python.daily_data_load" />
+        <item itemvalue="Python.load_agg_data (1)" />
+        <item itemvalue="Python.nsepy_hist_data_load" />
+        <item itemvalue="Python.nsepy_index_dataload" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-975db3bf15a3-31b6be0877a2-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-241.18034.82" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="" />
+      <created>1719325614855</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1719325614855</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/portfolio.py</url>
+          <line>32</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/stock_analysis.py</url>
+          <line>168</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/mf_data_load/mf_hist_data_load.py</url>
+          <line>60</line>
+          <option name="timeStamp" value="4" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/mf_data_load/mf_snapshot_with_prev_nav.py</url>
+          <line>78</line>
+          <option name="timeStamp" value="5" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_bonus_split_data.py</url>
+          <line>25</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py</url>
+          <line>20</line>
+          <option name="timeStamp" value="7" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py</url>
+          <line>144</line>
+          <option name="timeStamp" value="12" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py</url>
+          <line>72</line>
+          <option name="timeStamp" value="13" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py</url>
+          <line>22</line>
+          <option name="timeStamp" value="15" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py</url>
+          <line>21</line>
+          <option name="timeStamp" value="17" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py</url>
+          <line>25</line>
+          <option name="timeStamp" value="19" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py</url>
+          <line>85</line>
+          <option name="timeStamp" value="21" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_load.py</url>
+          <line>278</line>
+          <option name="timeStamp" value="22" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+    <watches-manager>
+      <configuration name="PythonConfigurationType">
+        <watch expression="stock_split_info" />
+      </configuration>
+    </watches-manager>
+  </component>
+</project>

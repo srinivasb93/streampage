@@ -240,9 +240,9 @@ def update_overall_portfolio_summary(fetch_type='load_and_fetch',
 
 if __name__ == '__main__':
     # print(fecth_or_load_equity_holdings('load_and_fetch'))
-    print(fecth_or_load_mf_holdings('load_and_fetch'), for_date=dt.date(2024, 7, 15))
-    # print(update_overall_portfolio_summary('load',
-    #                                        fetch_data=False,
-    #                                        for_date=dt.date(2024, 7, 12),
-    #                                        mf_snap_reload=True,
-    #                                        bhavcopy_reload=False))
+    # print(fecth_or_load_mf_holdings('load_and_fetch'), for_date=dt.date(2024, 7, 15))
+    print(update_overall_portfolio_summary('load_and_fetch',
+                                           fetch_data=False,
+                                           for_date=dt.date(2024, 10, 31),
+                                           mf_snap_reload=False,
+                                           bhavcopy_reload=False))

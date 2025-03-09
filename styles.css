@@ -1,6 +1,6 @@
 /* Move block container higher */
 div.block-container.st-emotion-cache-1jicfl2.ea3mdgi5 {
-  margin-top: -1em;
+  margin-top: -.1em;
   margin-left: -7em;
 }
 
@@ -53,6 +53,12 @@ div.st-emotion-cache-yksnv9.e1f1d6gn3 {
 
 /* Market Snapshot Sectors data*/
 div.st-emotion-cache-19xyx4a.e1f1d6gn3 {
+    background-color: #223354;
+    padding: .5% .5% .5% .5%;
+    border-radius: 5px;
+}
+
+div.st-emotion-cache-vt7tmh.e1f1d6gn2 {
     background-color: #223354;
     padding: .5% .5% .5% .5%;
     border-radius: 5px;

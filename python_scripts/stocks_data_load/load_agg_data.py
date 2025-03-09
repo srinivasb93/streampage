@@ -2,6 +2,7 @@ import pandas as pd
 from common_utils import read_write_sql_data as rd
 from python_scripts.candle import find_candle
 import logging
+import pandas_ta as ta
 
 log = logging.getLogger()
 logging.basicConfig(filename=r"C:\Users\sba400\MyProject\streampage\python_scripts\logfiles\AGG_DATA_LOAD.log",
@@ -24,10 +25,16 @@ def resample_daily_data(daily_data, resample_to='W'):
     agg_data.reset_index(inplace=True)
 
     agg_data['Percent_Chg_'+resample_to] = round(agg_data['Close'].pct_change()*100, 2)
-    agg_data['Range_'+resample_to] = round(agg_data['High'] - agg_data['Low'], 2)
-    agg_data['Max_Chg_'+resample_to] = agg_data['Percent_Chg_' + resample_to].expanding().max()
-    agg_data['Max_Vol_'+resample_to] = agg_data['Volume'].expanding().max()
-    agg_data['Max_Range_'+resample_to] = round((agg_data['High'] - agg_data['Low']).expanding().max(), 2)
+    if resample_to in ['M', 'W']:
+        agg_data['Range_'+resample_to] = round(agg_data['High'] - agg_data['Low'], 2)
+        agg_data['Max_Chg_'+resample_to] = agg_data['Percent_Chg_' + resample_to].expanding().max()
+        agg_data['Max_Vol_'+resample_to] = agg_data['Volume'].expanding().max()
+        # agg_data['Avg_Vol_6' + resample_to] = int(agg_data['Volume'].rolling(6).mean())
+        # agg_data['Candle'] = ta.cdl_pattern(agg_data.ta.ohlc4)
+        agg_data['LR_6_' + resample_to] = round(ta.linreg(agg_data['Close'], length=6), 2)
+        agg_data['Low_LR_6_' + resample_to] = round((agg_data['Low'] + agg_data['LR_6_' + resample_to]) / 2, 2)
+        agg_data['High_LR_6_' + resample_to] = round((agg_data['High'] + agg_data['LR_6_' + resample_to]) / 2, 2)
+        # agg_data['Max_Range_'+resample_to] = round((agg_data['High'] - agg_data['Low']).expanding().max(), 2)
     # find_candle.find_candle(agg_data, duration=resample_to)
 
     if resample_to == 'M':
@@ -56,16 +63,18 @@ def resample_daily_data(daily_data, resample_to='W'):
 
 # stocks = ['NIFTY_100']
 def stocks_agg_data_load():
-    query = """select SYMBOL from [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 200'
-                UNION
-                select [Stock_Symbol] from [ANALYTICS].[dbo].[EQUITY_HOLDINGS]
-                UNION 
-                SELECT NAME FROM dbo.STOCK_INDICES UNION SELECT NAME FROM dbo.STOCK_SECTORS"""
-    stocks_data = rd.get_table_data(query=query)
-    stocks = stocks_data['SYMBOL'].values.tolist()
+    stock_list_df = rd.get_table_data(selected_table='STOCKS_IN_DB')
+    stock_list = stock_list_df['SYMBOL'].values.tolist()
+    indices_df = rd.get_table_data(selected_table="STOCK_INDICES")
+    indices_list = indices_df['name'].values.tolist()
+    sectors_df = rd.get_table_data(selected_table="STOCK_SECTORS")
+    sectors_list = sectors_df['name'].values.tolist()
+
+    stocks_indices_sectors = stock_list + indices_list + sectors_list
+
     failed_agg_load = []
     combined_agg_data = pd.DataFrame()
-    for stock in stocks:
+    for stock in stocks_indices_sectors:
         if "&" in stock or "-" in stock:
             stock = stock.replace("&", "").replace("-", "")
         log.info(stock)
@@ -73,6 +82,7 @@ def stocks_agg_data_load():
             get_query = f"select * from [NSEDATA].[dbo].{stock} order by Date ASC"
             daily_data = rd.get_table_data(query=get_query)
             daily_data.set_index(daily_data['Date'], inplace=True, drop=True)
+            daily_data['Pct_Chg_D'] = round(daily_data['Close'].pct_change() * 100, 1)
             daily_data.index = pd.to_datetime(daily_data.index)
 
             agg_weekly_data = resample_daily_data(daily_data, 'W')
@@ -103,10 +113,15 @@ def stocks_agg_data_load():
             # find_candle.find_candle(daily_data, duration='D')
 
             # Extract the last row from each DataFrame
-            last_row_daily = daily_data.iloc[-1].copy()
             last_row_weekly = agg_weekly_data.iloc[-1].copy()
             last_row_monthly = agg_monthly_data.iloc[-1].copy()
             last_row_yearly = agg_yearly_data.iloc[-1].copy()
+            # Add 52-Week High Date to daily data
+            daily_data['High_52W_Date'] = daily_data['Date'][daily_data['High'] == last_row_weekly['High_52W']]
+            daily_data['Low_52W_Date'] = daily_data['Date'][daily_data['Low'] == last_row_weekly['Low_52W']]
+            daily_data['High_52W_Date'].fillna(method='ffill', inplace=True)
+            daily_data['Low_52W_Date'].fillna(method='ffill', inplace=True)
+            last_row_daily = daily_data.iloc[-1].copy()
             
             last_row_weekly.rename({'Open': 'Open_W', 'High': 'High_W', 'Low': 'Low_W', 'Close': 'Close_W',
                                     'Volume': 'Volume_W'}, inplace=True)
@@ -116,16 +131,15 @@ def stocks_agg_data_load():
                                     'Volume': 'Volume_Y'}, inplace=True)
 
             weekly_cols = ['Open_W', 'High_W', 'Low_W', 'Close_W', 'Volume_W', 'Percent_Chg_W', 'Range_W',
-                           'Max_Chg_W', 'Max_Vol_W', 'Max_Range_W', 'High_52W', 'Low_52W',
-                           'High_6W', 'Low_6W', 'Wk_EMA_13', 'Wk_EMA_52']
+                           'Max_Chg_W', 'Max_Vol_W', 'High_52W', 'Low_52W', 'LR_6_W', 'Low_LR_6_W',
+                           'High_LR_6_W', 'High_6W', 'Low_6W', 'Wk_EMA_13', 'Wk_EMA_52']
 
             monthly_cols = ['Open_M', 'High_M', 'Low_M', 'Close_M', 'Volume_M', 'Percent_Chg_M', 'Range_M',
-                            'Max_Chg_M', 'Max_Vol_M', 'Max_Range_M', 'Prev_Mth_Chg', 'Mth_EMA_20',
-                            'High_6M', 'Low_6M']
+                            'Max_Chg_M', 'Max_Vol_M', 'Prev_Mth_Chg', 'Mth_EMA_20',
+                            'High_6M', 'Low_6M', 'LR_6_M', 'Low_LR_6_M', 'High_LR_6_M',]
 
-            yearly_cols = ['Open_Y', 'High_Y', 'Low_Y', 'Close_Y', 'Volume_Y', 'Percent_Chg_Y', 'Range_Y',
-                            'Max_Chg_Y', 'Max_Vol_Y', 'Max_Range_Y', 'Prev_Year_Chg', '3_Year_Returns',
-                            '5_Year_Returns', 'Max_Returns']
+            yearly_cols = ['Open_Y', 'High_Y', 'Low_Y', 'Close_Y', 'Volume_Y', 'Percent_Chg_Y',
+                           'Prev_Year_Chg', '3_Year_Returns', '5_Year_Returns', 'Max_Returns']
 
             combined_data = pd.concat([last_row_daily,
                                        last_row_weekly[weekly_cols],

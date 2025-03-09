@@ -1,14 +1,20 @@
 import time
+
+import nsepython
 import pandas as pd
 import sqlalchemy as sa
 import datetime as dt
 import urllib
 import yfinance as yf
 from jugaad_data import nse
+from nsepython import equity_history
 from common_utils import read_write_sql_data as rd
 
-startdate = dt.date(2007, 1, 1)
-enddate = dt.date.today()
+startdate = dt.date(2010, 1, 1)
+enddate = dt.date(2025, 3, 5)
+# startdate = "1-1-2014"
+# enddate = "13-12-2024"
+# enddate = dt.date.today()
 
 
 def adj_close(data, stock):
@@ -64,29 +70,43 @@ SELECT  [SYMBOL]  FROM [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY MID
 # query = "SELECT SYMBOL FROM DBO.ALL_STOCKS WHERE STK_INDEX = 'NIFTY 50'"
 stocks_df = pd.read_sql(query_stocks, con=conn)
 stocks = stocks_df['SYMBOL'].tolist()
-stocks = ['M&MFIN']
+stocks = ['MAFANG']
 
 split_count_dict = dict(split_df['SYMBOL'].value_counts())
 split_stocks_list = split_df['SYMBOL'].unique().tolist()
 x = 0
+source = 'NSE'
 
 for stock in stocks:
     print("Extracting Data from NSE for the stock : {}" .format(stock))
     # data = get_history(symbol=stock, start=startdate, end=enddate)
     # data = nse.stock_df(symbol=stock, from_date=startdate, to_date=enddate)
-    data = yf.Ticker(stock+'.NS').history(period='max', interval='1d')[['Open', 'High', 'Low', 'Close', 'Volume']]
-    # data = nse.stock_df(symbol=stock, from_date=startdate, to_date=enddate, series='EQ')
-    data.reset_index(inplace=True)
-    # data.rename(columns={'DATE': 'Date', 'OPEN': 'Open', 'HIGH': 'High',
-    #                      'LOW': 'Low', 'CLOSE': 'Close', 'VOLUME': 'Volume'},
-    #                      inplace=True)
-    data['Date'] = pd.to_datetime(data['Date'], format='%Y-%m-%d')
-    data['Date'] = data['Date'].dt.tz_localize(None)
-    data.ffill(inplace=True, axis=0)
-    stock_data = data[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
+
+    if source == 'NSE':
+        try:
+            data = nse.stock_df(symbol=stock, from_date=startdate, to_date=enddate, series='EQ')
+        except:
+            data = equity_history(symbol=stock, series='EQ', start_date=startdate, end_date=enddate)
+        data.reset_index(inplace=True)
+        data.rename(columns={'DATE': 'Date', 'OPEN': 'Open', 'HIGH': 'High',
+                             'LOW': 'Low', 'CLOSE': 'Close', 'VOLUME': 'Volume'},
+                             inplace=True)
+        data['Date'] = pd.to_datetime(data['Date'], format='%Y-%m-%d')
+        # data['Date'] = data['Date'].dt.tz_localize(None)
+        data.ffill(inplace=True, axis=0)
+        stock_data = data[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
+    elif source == 'SQL':
+        stock_data = rd.get_table_data(selected_table=stock, sort=True)
+    elif source == 'Yahoo':
+        stock_data = yf.Ticker(stock + '.NS').history(period='max', interval='1d')[
+            ['Open', 'High', 'Low', 'Close', 'Volume']]
+        stock_data.reset_index(inplace=True)
+        stock_data['Date'] = pd.to_datetime(stock_data['Date'], format='%Y-%m-%d')
+        stock_data['Date'] = stock_data['Date'].dt.tz_localize(None)
     # Calculate stock prices based on stock split or bonus shares issued
-    if stock in split_stocks_list:
-        stock_data = adj_close(stock_data, stock)
+    if source != 'Yahoo':
+        if stock in split_stocks_list:
+            stock_data = adj_close(stock_data, stock)
     print("Start Data Load for the stock : {}".format(stock))
     # Remove special characters in stock names
     if stock == 'BAJAJ-AUTO':
@@ -105,7 +125,7 @@ for stock in stocks:
     stock_data['High'] = round(stock_data['High'], 2)
     stock_data['Low'] = round(stock_data['Low'], 2)
     stock_data['Close'] = round(stock_data['Close'], 2)
-    rd.load_sql_data(data_to_load=stock_data, table_name=stock)
+    rd.load_sql_data(data_to_load=stock_data, table_name=stock, load_type='replace')
     print("Data Load done for the stock : {}".format(stock))
     # Add 5 seconds delay to data extraction for every 2 stocks
     x += 1

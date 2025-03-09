@@ -5,6 +5,7 @@ from datetime import date
 import re
 from common_utils import read_write_sql_data as rd
 import logging
+import nsepython as np
 
 log = logging.getLogger()
 logging.basicConfig(filename=r"C:\Users\sba400\MyProject\streampage\python_scripts\logfiles\DATALOAD.log",
@@ -45,10 +46,9 @@ class Dataload:
         """ Method to get stocks and indices list from SQL database """
         if data_type == 'Stock':
             log.info("Fetching Stock names from SQL")
-            all_stocks = rd.get_table_data(selected_table='ALL_STOCKS')
+            stocks_in_db = rd.get_table_data(selected_table='STOCKS_IN_DB')
             my_holdings = rd.get_table_data(selected_database='ANALYTICS', selected_table='EQUITY_HOLDINGS')
-            stocks = list(set(all_stocks[all_stocks['STK_INDEX'] == "NIFTY 200"]['SYMBOL'].values.tolist() +
-                                my_holdings['Stock_Symbol'].values.tolist()))
+            stocks = list(set(stocks_in_db['SYMBOL'].values.tolist() + my_holdings['Stock_Symbol'].values.tolist()))
         else:
             log.info("Fetching Index/Sector names from SQL")
             indices = rd.get_table_data(selected_table='STOCK_INDICES')
@@ -93,10 +93,6 @@ class Dataload:
             stock = 'BAJAJ-AUTO'
         if stock == 'MM':
             stock = 'M&M'
-        if stock == 'MCDOWELL':
-            stock = 'MCDOWELL-N'
-        if stock == 'LTFH':
-            stock = 'L&TFH'
         if stock == 'MMFIN':
             stock = 'M&MFIN'
 
@@ -108,8 +104,11 @@ class Dataload:
 
         # Write data read from bhav table to SQL Server table
         # data_to_add.to_sql(name=stock, con=self.conn, if_exists='append', index=False)
-        rd.load_sql_data(data_to_load=data_to_add, table_name=stock, load_type='append')
-        log.info("Data Load done for the stock : {}".format(stock))
+        msg = rd.load_sql_data(data_to_load=data_to_add, table_name=stock, load_type='append')
+        if 'success' in msg:
+            log.info("Data Load done for the stock : {}".format(stock))
+        else:
+            log.debug(f'Data load failed for the stock {stock}')
     ################################################################################################################
 
     def load_index_data(self, stock):
@@ -190,8 +189,9 @@ def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
     # Create dataload object to start with the data load
     dataload = Dataload()
     # cm_holidays = nse.NSELive().holiday_list()['CM']
-    # nse_holidays = [pd.to_datetime(rec['tradingDate']).date() for rec in cm_holidays]
-    nse_holidays = []
+    cm_holidays = np.nse_holidays()['CM']
+    nse_holidays = [pd.to_datetime(rec['tradingDate']).date() for rec in cm_holidays]
+
     # Capture stocks/indices for which data load is not complete
     data_load_failed_stocks = []
     data_load_failed_indices = []
@@ -233,7 +233,7 @@ def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
             for stock_type in stock_index:
                 # Get list of stocks/indices
                 stocks_list = dataload.get_stocks_index_data(stock_type)
-                # stocks_list = ['UNIONBANK']
+                # stocks_list = ['ADANIPOWER']
                 # Read Bhav Data for Stocks or Indices
                 dataload.read_bhav_data(stock_type)
                 if stock_type == 'Stock':
@@ -276,4 +276,4 @@ def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
 
 if __name__ == '__main__':
     """ Call required methods in this module for data load """
-    equity_daily_data_load(for_date=datetime.date(2024,8,6), adhoc_date=True)
+    equity_daily_data_load(for_date=datetime.date(2024,12,26), adhoc_date=True)

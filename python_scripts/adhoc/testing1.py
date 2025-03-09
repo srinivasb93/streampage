@@ -12,7 +12,6 @@ def fetch_stock_data(symbol, start_date):
 
     # Fetch data from SQL Server
     stock_data = pd.read_sql(query, connection_string, parse_dates=['Date'], index_col='Date')
-
     return stock_data
 
 

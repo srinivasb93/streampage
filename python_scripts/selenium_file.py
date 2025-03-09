@@ -1,15 +1,3 @@
-"""!
-@author: Saurabh Baid
-@date: May-2016
-@contact: saurabh.baid@cambiumnetworks.com
-@summary: This library provides API to interact with CNMaestro using different web browsers. The library is supposed to be x-platoform and if there
-any limitation it would be mentioned in the individual APIs.  Currently following WebBrowsers are supported.
- - Firefox
- - Chrome
- - Safari (On MAC)
- - Internet Explorer (Windows 7)
- - Edge (Windows 10)
-"""
 import re
 import logging
 import sys

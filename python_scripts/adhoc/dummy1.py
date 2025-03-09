@@ -1,13 +1,35 @@
-import datetime
-import pandas as pd
-
 from common_utils import read_write_sql_data as rd
+import pandas as pd
+import datetime as dt
 
-stocks = ['NIFTY_100', 'NIFTY_200', 'NIFTY_500', 'NIFTY_AUTO', 'NIFTY_BANK', 'NIFTY_COMMODITIES', 'NIFTY_CONSUMPTION', 'NIFTY_CPSE', 'NIFTY_ENERGY', 'NIFTY_FIN_SERVICE', 'NIFTY_FMCG', 'NIFTY_INFRA', 'NIFTY_IT', 'NIFTY_MEDIA', 'NIFTY_METAL', 'NIFTY_MIDCAP_100', 'NIFTY_MIDCAP_50', 'NIFTY_MNC', 'NIFTY_NEXT_50', 'NIFTY_PHARMA', 'NIFTY_PSE', 'NIFTY_PSU_BANK', 'NIFTY_REALTY', 'NIFTY_SERV_SECTOR', 'NIFTY_SMLCAP_100', 'NIFTY_SMLCAP_250', 'NIFTY_SMLCAP_50', 'OFSS']
+def fetch_stocks_data(data_type='Daily', equity_type='Stocks', bhav_copy=False,
+                      fetch_count=False, fetch_date=dt.date.today()):
+    stocks_data = pd.DataFrame()
 
-for stock in stocks:
-    data = rd.get_table_data(selected_table=stock, sort=True)
-    data['Date'] = pd.to_datetime(data['Date'], format='mixed')
-    msg = rd.load_sql_data(data_to_load=data, table_name=stock)
-    print(msg)
+    if bhav_copy:
+        if equity_type == 'Stocks':
+            stocks_data = rd.get_table_data(selected_table='BHAVCOPY')
+        elif equity_type == 'Index':
+            stocks_data = rd.get_table_data(selected_table='BHAVCOPY_INDICES')
+    else:
+        stock_list_df = rd.get_table_data(selected_table='STOCKS_IN_DB')
+        stocks_list = stock_list_df['SYMBOL'].values.tolist()
+        if data_type != 'Daily':
+            stock_suffix = {'Weekly': '_W', 'Monthly': '_M', 'Yearly': '_Y'}
+            stocks_list = [stk_name + stock_suffix.get(data_type, '') for stk_name in stocks_list]
 
+        stocks_data = pd.DataFrame()
+        for stock_name in stocks_list:
+            stock_data = rd.get_table_data(selected_table=stock_name, sort_order='DESC', sort=True,
+                                           sample=True, sample_count=1)
+            stock_data.insert(0, 'Symbol', stock_name)
+            if fetch_count:
+                query = f"select count(*) from NSEDATA.dbo.{stock_name} where Date >= '{fetch_date}'"
+                query_data = rd.get_table_data(query=query)
+                row_count = query_data.values.tolist()[0][0]
+                stock_data.insert(1, 'Row_Count', row_count)
+            stocks_data = pd.concat([stocks_data, stock_data], axis=0, ignore_index=True)
+
+    return stocks_data
+
+data = fetch_stocks_data(fetch_count=True, fetch_date=dt.date(2024, 10, 10))

@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="Latest Code">
-      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
+    <list default="true" id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="requiremnets updated">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -356,7 +356,31 @@
       <option name="project" value="LOCAL" />
       <updated>1741525480687</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="docker update">
+      <option name="closed" value="true" />
+      <created>1741526049655</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1741526049655</updated>
+    </task>
+    <task id="LOCAL-00004" summary="requiremnets updated">
+      <option name="closed" value="true" />
+      <created>1741526288582</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1741526288582</updated>
+    </task>
+    <task id="LOCAL-00005" summary="requiremnets updated">
+      <option name="closed" value="true" />
+      <created>1741526358343</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1741526358343</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -386,7 +410,9 @@
     <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
     <MESSAGE value="Initial Code" />
     <MESSAGE value="Latest Code" />
-    <option name="LAST_COMMIT_MESSAGE" value="Latest Code" />
+    <MESSAGE value="docker update" />
+    <MESSAGE value="requiremnets updated" />
+    <option name="LAST_COMMIT_MESSAGE" value="requiremnets updated" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -4,89 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="Initial Code">
-      <change afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/algo_utils.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backtest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backtest_claude.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backtest_latest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/claude_order.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/claude_order_page.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/claude_ui_page.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/common_utils/fetch_data.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/common_utils/technical_indicators.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/grok_order_deepseek.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/grok_upstox_order.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/icons/pause-play.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/icons/play.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/icons/stop.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/marketsummary.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/new_page_claude.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/order_new.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/order_page.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/perplexity_order.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/analysis.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/breakouts.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/claude_file.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/dummy2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/dummy3.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/treand_analysis_latest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/trend_analysis.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/trend_analysis2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/tv_final.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/tv_qt_new.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/adhoc/tv_qt_stock_analysis.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/EOD_analysis_old.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/agg_eod_data_analysis.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/analysis/supp_resr.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/python_scripts/backtest_strategy/backtest_etf.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/screener.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/stcok_analysis_bkp.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/stock_analysis_gpt.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/stock_replay.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/stock_replay1.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/stock_replay2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategies/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategies/goldbees.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategies/grok.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategies/investment.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategies/lin_reg_strategy.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategies/long_invest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategies/long_invest_new.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/strategy_tester.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/summary.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_upstox.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vectorbt_streamlit.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/websocket_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/yfinancecharts.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/zerodha_order.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/zerodha_order_page.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dataload.py" beforeDir="false" afterPath="$PROJECT_DIR$/dataload.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/market_snapshot.py" beforeDir="false" afterPath="$PROJECT_DIR$/market_snapshot.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/adhoc/Stock_History.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/adhoc/tv_stock_analysis.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/adhoc/dummy1.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/adhoc/dummy1.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/adhoc/nsetools_exp.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/adhoc/nsetools_exp.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/adhoc/sample.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/adhoc/sample.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/adhoc/testing1.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/adhoc/testing1.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/analysis/EOD_analysis.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/analysis/EOD_analysis.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/analysis/EOD_analysis_latest.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/analysis/EOD_analysis_latest.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/get_market_data/market_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/get_market_data/market_data.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/logfiles/DATALOAD.log" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/logfiles/DATALOAD.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/selenium_file.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/selenium_file.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_load.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_load.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_update.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_update.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_portfolio.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_portfolio.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stock_analysis.py" beforeDir="false" afterPath="$PROJECT_DIR$/stock_analysis.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/streamlit_app.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlit_app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/styles.css" beforeDir="false" afterPath="$PROJECT_DIR$/styles.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_app.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_file.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_file.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/trading.py" beforeDir="false" afterPath="$PROJECT_DIR$/trading.py" afterDir="false" />
+    <list default="true" id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="Latest Code">
+      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -428,7 +348,15 @@
       <option name="project" value="LOCAL" />
       <updated>1723809907657</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="Latest Code">
+      <option name="closed" value="true" />
+      <created>1741525480687</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1741525480687</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -457,7 +385,8 @@
   <component name="VcsManagerConfiguration">
     <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
     <MESSAGE value="Initial Code" />
-    <option name="LAST_COMMIT_MESSAGE" value="Initial Code" />
+    <MESSAGE value="Latest Code" />
+    <option name="LAST_COMMIT_MESSAGE" value="Latest Code" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

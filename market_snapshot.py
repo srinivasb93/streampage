@@ -2,8 +2,6 @@ import streamlit as st
 from common_utils import read_write_sql_data as rd
 import pandas as pd
 from python_scripts.get_market_data import market_data
-from st_aggrid import AgGrid, GridOptionsBuilder
-from streamlit_extras.dataframe_explorer import dataframe_explorer
 import nsepython as np
 
 

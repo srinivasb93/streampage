@@ -107,8 +107,8 @@ with buy_curr_col:
         xaxis_tickfont_size=14,
         yaxis=dict(
             title='Value (in Rupees)',
-            titlefont_size=16,
-            tickfont_size=14,
+            # titlefont_size=16,
+            # tickfont_size=14,
         ),
         legend=dict(
             x=.8,

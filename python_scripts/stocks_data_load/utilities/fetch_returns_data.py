@@ -1,7 +1,6 @@
 from common_utils import read_write_sql_data as rd
 import pandas as pd
 import datetime as dt
-from dateutil import parser
 from python_scripts.stocks_data_load import bhav_copy_extract as bhav
 
 conn = rd.create_connection()

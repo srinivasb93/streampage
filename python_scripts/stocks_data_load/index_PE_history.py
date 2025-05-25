@@ -4,7 +4,7 @@ import datetime as dt
 import pyodbc
 import urllib
 import yfinance as yf
-from nsepy import get_history,get_index_pe_history as get_pe
+from nsepython import index_pe_pb_div
 
 
 enddate = dt.date.today()
@@ -40,7 +40,7 @@ for stk_index in indices:
     start_dt = startdate[0][0]
     start_dt = pd.to_datetime(start_dt).date()
     print("Extracting Data from NSE for the index : {}" .format(stk_index))
-    data = get_pe(symbol=stk_index, start=start_dt, end=enddate)
+    data = index_pe_pb_div(symbol=stk_index, start_date=start_dt, end_date=enddate)
     data.reset_index(inplace=True)
 
     #Read data from .csv file

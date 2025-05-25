@@ -1,20 +1,26 @@
+import pandas as pd
 import streamlit as st
 import upstox_client
 from datetime import time as date_time
 import smtplib
 from email.mime.text import MIMEText
+from dotenv import load_dotenv
 from sqlalchemy.sql import text
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from queue import Queue, PriorityQueue
+import os
 import json
+import requests
+from lightweight_charts.widgets import StreamlitChart
 from common_utils.read_write_sql_data import get_table_data, load_sql_data, create_connection
 from common_utils import *
+from python_scripts.backtest_strategy import backtest_etf
 import uuid
 import altair as alt
 from kiteconnect import KiteConnect
 import pyotp
-import asyncio
-import schedule
-from common_utils.db_utils import async_fetch_query, async_execute_query
-from concurrent.futures import ThreadPoolExecutor
+import atexit
+from sqlalchemy.exc import  OperationalError
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", force=True)
@@ -59,292 +65,251 @@ st.markdown("""
 broker = st.sidebar.selectbox("Select Broker", ["Upstox", "Zerodha"], key="select_broker")
 
 
-class OrderMonitor:
-    def __init__(self):
+class ThreadManager:
+    """Manages threads for order monitoring, syncing, and risk checks."""
+    def __init__(self, max_workers=10):
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.registry = {}  # {thread_name: {"future": Future, "stop_event": threading.Event}}
+        self.lock = threading.Lock()
+        self.order_queue = Queue()
         self.running = True
-        self.polling_interval = st.session_state.get("polling_interval", 60)
-        self.order_queue = None
+        self.cleanup_interval = 60  # Seconds
         self.broker = st.session_state.get("select_broker", "Upstox")
-        self.monitor_tasks = []
-        logger.info("OrderMonitor initialized")
+        atexit.register(self.shutdown)
+        logger.info("ThreadManager initialized")
 
-    async def initialize_queue(self):
-        if self.order_queue is None:
-            self.order_queue = asyncio.Queue()
-            logger.info("Order queue initialized")
+    def start_order_monitor(self, order_id, instrument_token, transaction_type, quantity, product_type,
+                            stop_loss_price, target_price, api, broker):
+        """Monitor a limit order and place SL/target orders upon completion."""
+        thread_name = f"LimitOrderMonitor_{order_id}"
+        stop_event = threading.Event()
+        future = self.executor.submit(
+            self._monitor_order, thread_name, order_id, instrument_token, transaction_type,
+            quantity, product_type, stop_loss_price, target_price, api, broker, stop_event
+        )
+        with self.lock:
+            self.registry[thread_name] = {"future": future, "stop_event": stop_event}
+        logger.info(f"Started thread {thread_name} for order {order_id}")
 
-    async def sync_order_statuses(self, upstox_api, zerodha_api):
-        """Sync order statuses for both brokers."""
-        await self.initialize_queue()
+    def _monitor_order(self, thread_name, order_id, instrument_token, transaction_type, quantity, product_type,
+                       stop_loss_price, target_price, api, broker, stop_event):
+        """Worker function to monitor an order."""
         try:
-            orders_df = await self._get_pending_orders()
-            completed_query = text("""
-                SELECT OrderID, Status, Broker, InstrumentToken, TradingSymbol 
-                FROM NSEDATA.dbo.Orders 
-                WHERE Status = 'complete'
-            """)
-            completed_orders = await async_fetch_query(completed_query, {"database": DATABASE})
-
-            for _, row in pd.concat([orders_df, completed_orders]).drop_duplicates().iterrows():
-                broker = row["Broker"]
-                order_id = row["OrderID"]
-                try:
-                    if broker == "Upstox":
-                        status = upstox_api.get_order_status(order_id=order_id).data.status
-                    else:
-                        status = zerodha_api.order_history(order_id=order_id)[-1]["status"].lower()
-                    await self._update_order_status(order_id, status, broker)
-                    if status.lower() == "complete":
-                        await self._process_queued_orders(order_id, row["InstrumentToken"], row["TradingSymbol"],
-                                                         upstox_api if broker == "Upstox" else zerodha_api, broker)
-                    logger.info(f"Synced order {order_id} for {broker}: {status}")
-                except Exception as e:
-                    logger.error(f"Error syncing order {order_id} for {broker}: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error in sync_order_statuses: {str(e)}")
-
-    async def monitor_order(self, order_id, instrument_token, trading_symbol, transaction_type, quantity, product_type,
-                           stop_loss_price, target_price, api, broker):
-        """Monitor a regular or GTT order with exponential backoff."""
-        task = asyncio.current_task()
-        self.monitor_tasks.append(task)
-        try:
-            await self.initialize_queue()
-            if stop_loss_price or target_price:
-                sl_transaction = "BUY" if transaction_type == "SELL" else "SELL"
-                if stop_loss_price:
-                    await self.order_queue.put({
-                        "ParentOrderID": order_id,
-                        "InstrumentToken": instrument_token,
-                        "TradingSymbol": trading_symbol,
-                        "TransactionType": sl_transaction,
-                        "Quantity": quantity,
-                        "OrderType": "SL-M",
-                        "Price": 0,
-                        "TriggerPrice": stop_loss_price,
-                        "ProductType": product_type,
-                        "Validity": "DAY",
-                        "IsGTT": False,
-                        "Status": "QUEUED"
-                    })
-                if target_price:
-                    await self.order_queue.put({
-                        "ParentOrderID": order_id,
-                        "InstrumentToken": instrument_token,
-                        "TradingSymbol": trading_symbol,
-                        "TransactionType": sl_transaction,
-                        "Quantity": quantity,
-                        "OrderType": "LIMIT",
-                        "Price": target_price,
-                        "TriggerPrice": 0,
-                        "ProductType": product_type,
-                        "Validity": "DAY",
-                        "IsGTT": False,
-                        "Status": "QUEUED"
-                    })
-                await self._store_queued_orders()
-                notify("SL/Target Orders Queued", f"Queued SL and target for {trading_symbol}")
-
-            # Exponential backoff polling
-            max_attempts = 60  # Max attempts (~5 minutes with initial 5s delay)
-            attempt = 0
-            backoff = 5  # Start with 5 seconds
-            max_backoff = 30  # Cap at 30 seconds
-            while self.running and attempt < max_attempts:
+            while not stop_event.is_set():
                 try:
                     order_status = (api.get_order_status(order_id=order_id).data.status if broker == "Upstox"
                                     else api.order_history(order_id=order_id)[-1]["status"].lower())
-                    await self._update_order_status(order_id, order_status, broker)
+                    self._update_order_status(order_id, order_status, broker)
                     if order_status.lower() == "complete":
-                        await self._process_queued_orders(order_id, instrument_token, trading_symbol, api, broker)
+                        self._place_sl_target_orders(api, instrument_token, transaction_type, quantity, product_type,
+                                                     stop_loss_price, target_price, broker)
                         break
-                    elif order_status.lower() in ["rejected", "cancelled", "triggered"]:
-                        await self._clear_queued_orders(order_id)
+                    elif order_status.lower() in ["rejected", "cancelled"]:
                         break
-                    attempt += 1
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 1.5, max_backoff)  # Increase backoff exponentially
-                    logger.debug(f"Polling order {order_id}, attempt {attempt}, next in {backoff}s")
+                    stop_event.wait(1)
                 except Exception as e:
-                    logger.error(f"Error monitoring order {order_id}: {str(e)}")
+                    logger.exception(f"Error in thread {thread_name} for order {order_id}: {str(e)}")
                     break
-        except asyncio.CancelledError:
-            logger.info(f"Monitoring order {order_id} cancelled")
-            raise
-        except Exception as e:
-            logger.error(f"Error in monitor_order for {order_id}: {str(e)}")
         finally:
-            if task in self.monitor_tasks:
-                self.monitor_tasks.remove(task)
+            with self.lock:
+                self.registry.pop(thread_name, None)
+            logger.info(f"Thread {thread_name} completed for order {order_id}")
 
-    async def _get_pending_orders(self):
+    def _place_sl_target_orders(self, api, instrument_token, transaction_type, quantity, product_type,
+                                stop_loss_price, target_price, broker):
+        """Place stop-loss and target orders."""
+        sl_transaction = "BUY" if transaction_type == "SELL" else "SELL"
+        place_order(api, instrument_token, sl_transaction, quantity, 0, "SL-M", stop_loss_price,
+                    False, product_type, "DAY", None, None, broker=broker)
+        place_order(api, instrument_token, sl_transaction, quantity, target_price, "LIMIT", 0,
+                    False, product_type, "DAY", None, None, broker=broker)
+        notify("SL/Target Orders Placed", f"Placed SL and target for {instrument_token}")
+
+    def sync_order_statuses(self, upstox_api, zerodha_api):
+        """Sync order statuses for both brokers in a single thread."""
+        stop_event = threading.Event()
+        thread_name = "OrderSyncThread"
+        future = self.executor.submit(self._sync_orders_worker, upstox_api, zerodha_api, stop_event)
+        with self.lock:
+            self.registry[thread_name] = {"future": future, "stop_event": stop_event}
+        logger.info("Started order sync thread")
+
+    def _sync_orders_worker(self, upstox_api, zerodha_api, stop_event):
+        """Worker function to sync order statuses."""
+        while not stop_event.is_set():
+            try:
+                orders_df = self._get_pending_orders()
+                for _, row in orders_df.iterrows():
+                    broker = row["Broker"]
+                    order_id = row["OrderID"]
+                    try:
+                        if broker == "Upstox":
+                            status = upstox_api.get_order_status(order_id=order_id).data.status
+                        else:
+                            status = zerodha_api.order_history(order_id=order_id)[-1]["status"].lower()
+                        self._update_order_status(order_id, status, broker)
+                        logger.info(f"Synced order {order_id} for {broker}: {status}")
+                    except Exception as e:
+                        logger.exception(f"Error syncing order {order_id} for {broker}: {str(e)}")
+                stop_event.wait(300)
+            except Exception as e:
+                logger.exception(f"Error in order sync thread: {str(e)}")
+                stop_event.wait(10)  # Backoff on error
+
+    def _get_pending_orders(self):
+        """Fetch pending orders from the database."""
         query = text("""
-            SELECT OrderID, Status, Broker, InstrumentToken, TradingSymbol 
-            FROM NSEDATA.dbo.Orders 
-            WHERE Status IN ('open', 'pending', 'trigger pending')
+            SELECT OrderID, Status, Broker FROM NSEDATA.dbo.Orders 
+            WHERE Status NOT IN ('success', 'complete', 'rejected', 'cancelled', 'cancelled after market order', 'cancelled amo')
         """)
-        return await async_fetch_query(query, {"database": DATABASE})
+        try:
+            with engine.connect() as conn:
+                return pd.read_sql(query, conn, params={"database": DATABASE})
+        except OperationalError as e:
+            logger.error(f"Database error in _get_pending_orders: {str(e)}")
+            return pd.DataFrame()
 
-    async def _update_order_status(self, order_id, status, broker):
+    def _update_order_status(self, order_id, status, broker):
+        """Update order status in the database with thread safety."""
         query = text("""
             UPDATE NSEDATA.dbo.Orders 
             SET Status = :status 
             WHERE OrderID = :order_id AND Broker = :broker
         """)
-        await async_execute_query(query, {"status": status, "order_id": order_id, "broker": broker})
-
-    async def _store_queued_orders(self):
-        while not self.order_queue.empty():
-            order = await self.order_queue.get()
-            query = text("""
-                INSERT INTO NSEDATA.dbo.QueuedOrders (
-                    ParentOrderID, InstrumentToken, TradingSymbol, TransactionType, 
-                    Quantity, OrderType, Price, TriggerPrice, ProductType, Validity, IsGTT, Status
-                ) VALUES (
-                    :ParentOrderID, :InstrumentToken, :TradingSymbol, :TransactionType, 
-                    :Quantity, :OrderType, :Price, :TriggerPrice, :ProductType, :Validity, :IsGTT, :Status
-                )
-            """)
-            await async_execute_query(query, order)
-            self.order_queue.task_done()
-
-    async def _process_queued_orders(self, order_id, instrument_token, trading_symbol, api, broker):
-        query = text("""
-            SELECT * FROM NSEDATA.dbo.QueuedOrders 
-            WHERE ParentOrderID = :order_id AND Status = 'QUEUED'
-        """)
-        queued_orders = await async_fetch_query(query, {"order_id": order_id})
-        for _, row in queued_orders.iterrows():
+        with self.lock:
             try:
-                await place_order(
-                    api=api,
-                    instrument_token=instrument_token,
-                    transaction_type=row["TransactionType"],
-                    quantity=row["Quantity"],
-                    price=row["Price"],
-                    order_type=row["OrderType"],
-                    trigger_price=row["TriggerPrice"],
-                    is_gtt=row["IsGTT"],
-                    product_type=row["ProductType"],
-                    validity=row["Validity"],
-                    disclosed_quantity=row["DisclosedQuantity"],
-                    tag=row["Tag"],
-                    broker=broker
-                )
-                update_query = text("""
-                    UPDATE NSEDATA.dbo.QueuedOrders 
-                    SET Status = 'PLACED' 
-                    WHERE QueuedOrderID = :queued_order_id
-                """)
-                await async_execute_query(update_query, {"queued_order_id": row["QueuedOrderID"]})
-                logger.info(f"Processed queued order {row['QueuedOrderID']} for parent {order_id}")
+                with engine.connect() as conn:
+                    with conn.begin():
+                        conn.execute(query, {"status": status, "order_id": order_id, "broker": broker})
+                    logger.info(f"Updated order {order_id} status to {status} for {broker}")
+            except OperationalError as e:
+                logger.error(f"Database error in _update_order_status: {str(e)}")
+
+    def start_risk_check(self, api, auto_orders, positions_df=None):
+        thread_name = "RiskCheckThread"
+        stop_event = threading.Event()
+        future = self.executor.submit(self._periodic_risk_check, api, auto_orders, positions_df, stop_event)
+        with self.lock:
+            self.registry[thread_name] = {"future": future, "stop_event": stop_event}
+        logger.info("Started risk check thread")
+
+    def _periodic_risk_check(self, api, auto_orders, positions_df, stop_event):
+        while not stop_event.is_set():
+            try:
+                self._check_risk_exposure(api, auto_orders, positions_df)
+                stop_event.wait(60)
             except Exception as e:
-                logger.error(f"Error processing queued order for {order_id}: {str(e)}")
+                logger.exception(f"Error in risk check thread: {str(e)}")
+                stop_event.wait(10)
 
-    async def _clear_queued_orders(self, order_id):
-        query = text("""
-            UPDATE NSEDATA.dbo.QueuedOrders 
-            SET Status = 'CANCELLED' 
-            WHERE ParentOrderID = :order_id AND Status = 'QUEUED'
-        """)
-        await async_execute_query(query, {"order_id": order_id})
-        logger.info(f"Cleared queued orders for {order_id}")
-
-    async def cancel_all_tasks(self):
-        """Cancel all monitoring tasks."""
-        self.running = False
-        for task in self.monitor_tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*[task for task in self.monitor_tasks if not task.done()], return_exceptions=True)
-        self.monitor_tasks = []
-        logger.info("All monitoring tasks cancelled")
-
-    async def run_scheduled_tasks(self):
-        """Run periodic sync tasks asynchronously."""
-        await self.initialize_queue()
-        logger.info("Starting periodic sync tasks with polling interval %d seconds", self.polling_interval)
+    def _check_risk_exposure(self, api, auto_orders, positions_df):
         try:
-            logger.info("Performing initial sync")
-            await self.sync_order_statuses(st.session_state.get("upstox_apis", {}).get("order"),
-                                           st.session_state.get("kite_apis", {}).get("kite"))
-            if self.broker == "Zerodha":
-                await self.sync_gtt_orders(st.session_state.get("kite_apis", {}).get("kite"))
-            logger.info("Initial sync completed")
-            while self.running:
-                try:
-                    logger.debug("Waiting for %d seconds before next sync", self.polling_interval)
-                    await asyncio.sleep(self.polling_interval)
-                    await self.cleanup_async_tasks()
-                    logger.info("Starting periodic order sync")
-                    await self.sync_order_statuses(st.session_state.get("upstox_apis", {}).get("order"),
-                                                   st.session_state.get("kite_apis", {}).get("kite"))
-                    if self.broker == "Zerodha":
-                        logger.info("Starting periodic GTT sync")
-                        await self.sync_gtt_orders(st.session_state.get("kite_apis", {}).get("kite"))
-                    logger.info("Periodic sync completed")
-                except Exception as e:
-                    logger.error(f"Error in periodic sync: {str(e)}")
-        except asyncio.CancelledError:
-            logger.info("Periodic sync tasks cancelled")
-            raise
+            funds_data = api.get_user_profile_and_funds(
+                user_profile=False) if self.broker == "Upstox" else api.margins()
+            available_margin = (funds_data["data"]["equity"]["available_margin"] if self.broker == "Upstox"
+                                else funds_data["equity"]["available"]["live_balance"] if funds_data else 0)
+            total_risk = sum(order["RiskPerTrade"] for order in auto_orders if order["Broker"] == self.broker)
+            if positions_df is not None:
+                total_risk += sum(abs(row["P&L"]) / available_margin * 100 for _, row in positions_df.iterrows())
+            max_risk_threshold = st.session_state.get("max_risk_threshold", 5.0)
+            if total_risk > max_risk_threshold:
+                notify(
+                    "Risk Alert", f"Total risk ({total_risk:.2f}%) exceeds threshold ({max_risk_threshold}%)",
+                    "warning")
         except Exception as e:
-            logger.error(f"Error in run_scheduled_tasks: {str(e)}")
-        finally:
-            logger.info("Stopped periodic sync tasks")
+            logger.exception(f"Error checking risk exposure: {str(e)}")
 
-    async def cleanup_async_tasks(self):
-        """Clean up completed async tasks."""
-        if "async_tasks" in st.session_state:
-            st.session_state["async_tasks"] = [
-                task for task in st.session_state["async_tasks"] if not task.done()
+    def periodic_cleanup(self):
+        """Periodically clean up dead threads."""
+        while self.running:
+            with self.lock:
+                active_threads = len([name for name, info in self.registry.items() if not info["future"].done()])
+                logger.info(f"Active threads: {active_threads}, Registry size: {len(self.registry)}")
+                # Log connection pool stats
+                logger.info(f"DB pool: {engine.pool.status()}")
+                dead_threads = [name for name, info in self.registry.items() if info["future"].done()]
+                for name in dead_threads:
+                    self.registry.pop(name, None)
+                    logger.info(f"Cleaned up dead thread {name}")
+            time.sleep(self.cleanup_interval)
+
+    def shutdown(self):
+        """Gracefully shut down all threads."""
+        self.running = False
+        with self.lock:
+            for name, info in self.registry.items():
+                info["stop_event"].set()
+            for name, info in self.registry.items():
+                try:
+                    info["future"].result(timeout=5)
+                except Exception as e:
+                    logger.exception(f"Error shutting down thread {name}: {str(e)}")
+            self.registry.clear()
+        self.executor.shutdown(wait=True)
+        logger.info("ThreadManager shutdown complete")
+
+    def get_running_threads(self):
+        """Return a list of running threads."""
+        with self.lock:
+            return [
+                {"Name": name, "Daemon": True, "Alive": info}
+                for name, info in self.registry.items()
             ]
-            logger.debug(f"Cleaned up async tasks, {len(st.session_state['async_tasks'])} remaining")
 
 
 class OrderManager:
-    """Manages scheduled, auto, and GTT orders."""
-    def __init__(self, order_monitor: OrderMonitor):
-        self.order_monitor = order_monitor
-        self.scheduled_order_queue = []
+    """Manages scheduled and auto orders with thread-safe execution."""
+
+    def __init__(self, thread_manager: ThreadManager):
+        self.thread_manager = thread_manager
+        self.scheduled_order_queue = PriorityQueue()
+        self.lock = threading.Lock()
         self.running = True
         self.broker = st.session_state.get("select_broker", "Upstox")
-        self.order_lock = asyncio.Lock()
         self.market_open = date_time(9, 15)
         self.market_close = date_time(15, 30)
         logger.info("OrderManager initialized")
 
-    async def start(self):
+    def start(self):
         """Start background tasks for order management."""
         try:
+            self._start_scheduled_order_processor()
             self.recover_session_state()
-            await self._process_scheduled_orders()
             logger.info("OrderManager started successfully")
-        except asyncio.CancelledError:
-            logger.info("OrderManager tasks cancelled")
-            raise
         except Exception as e:
             logger.error(f"Failed to start OrderManager: {str(e)}")
             st.error(f"OrderManager initialization failed: {str(e)}")
 
-    async def _process_scheduled_orders(self):
-        """Process scheduled orders periodically."""
-        logger.info("Starting scheduled order processing")
-        try:
-            while self.running:
-                async with self.order_lock:
-                    logger.debug(f"Processing {len(self.scheduled_order_queue)} scheduled orders")
-                    for order in self.scheduled_order_queue[:]:
-                        await self._execute_scheduled_order(order)
-                await asyncio.sleep(1)
-        except asyncio.CancelledError:
-            logger.info("Scheduled order processing cancelled")
-            raise
-        except Exception as e:
-            logger.error(f"Error in _process_scheduled_orders: {str(e)}")
-            await asyncio.sleep(1)
-        finally:
-            logger.info("Stopped scheduled order processing")
+    def _start_scheduled_order_processor(self):
+        """Start a single thread to process scheduled orders."""
+        thread_name = "ScheduledOrderProcessor"
+        stop_event = threading.Event()
+        future = self.thread_manager.executor.submit(self._process_scheduled_orders, stop_event)
+        with self.thread_manager.lock:
+            self.thread_manager.registry[thread_name] = {"future": future, "stop_event": stop_event}
+        logger.info("Started scheduled order processor thread")
+
+    def _process_scheduled_orders(self, stop_event):
+        """Process scheduled orders from the priority queue."""
+        while not stop_event.is_set() and self.running:
+            try:
+                with self.lock:
+                    if self.scheduled_order_queue.empty():
+                        self._load_scheduled_orders()
+                    if self.scheduled_order_queue.empty():
+                        stop_event.wait(60)  # Wait if no orders
+                        continue
+                    # Get the next order (earliest schedule_datetime)
+                    schedule_time, order = self.scheduled_order_queue.get()
+                    if schedule_time > datetime.now():
+                        self.scheduled_order_queue.put((schedule_time, order))  # Put back if not due
+                        time_to_wait = (schedule_time - datetime.now()).total_seconds()
+                        stop_event.wait(min(time_to_wait, 60))
+                        continue
+                self._execute_scheduled_order(order)
+            except Exception as e:
+                logger.exception(f"Error in scheduled order processor: {str(e)}")
+                stop_event.wait(10)  # Backoff on error
 
     def _load_scheduled_orders(self):
         """Load pending scheduled orders from the database."""
@@ -358,286 +323,81 @@ class OrderManager:
             if not df.empty:
                 for _, order in df.iterrows():
                     schedule_time = pd.to_datetime(order["ScheduleDateTime"])
-                    if schedule_time > datetime.now() and order.to_dict() not in self.scheduled_order_queue:
-                        self.scheduled_order_queue.append(order.to_dict())
+                    if schedule_time > datetime.now():
+                        self.scheduled_order_queue.put((schedule_time, order.to_dict()))
                         logger.info(f"Loaded scheduled order {order['ScheduledOrderID']} for {schedule_time}")
-        except Exception as e:
+                    else:
+                        logger.warning(
+                            f"Ignoring past-due scheduled order {order['ScheduledOrderID']} at {schedule_time}")
+        except OperationalError as e:
             logger.error(f"Database error in _load_scheduled_orders: {str(e)}")
 
-    async def _execute_scheduled_order(self, order):
-        """Execute a scheduled order."""
-        async with self.order_lock:
+    def _execute_scheduled_order(self, order):
+        """Execute a single scheduled order."""
+        try:
+            order_id = order["order_id"]
+            logger.info(f"Executing scheduled order {order_id} at {datetime.now()}")
+            api = upstox_apis["order"] if self.broker == "Upstox" else kite_apis["kite"]
+            result = place_order(
+                api, order["instrument_token"], order["transaction_type"],
+                order["quantity"], order["price"], order["order_type"],
+                order["trigger_price"], False, order["product"],
+                "DAY", order["stop_loss"], order["target"], broker=self.broker
+            )
+            if result:
+                self._update_scheduled_order_status(order_id, "EXECUTED")
+                notify("Scheduled Order Executed", f"Order ID: {order_id}", "success")
+                logger.info(f"Successfully executed scheduled order {order_id}")
+            else:
+                self._update_scheduled_order_status(order_id, "FAILED")
+                notify("Scheduled Order Failed", f"Order ID: {order_id}", "error")
+                logger.error(f"Failed to execute scheduled order {order_id}")
+        except Exception as e:
+            logger.exception(f"Error executing scheduled order {order_id}: {str(e)}")
+            self._update_scheduled_order_status(order_id, "FAILED")
+            notify("Scheduled Order Error", f"Order ID: {order_id}, Error: {str(e)}", "error")
+
+    def _update_scheduled_order_status(self, order_id, status):
+        """Update the status of a scheduled order."""
+        query = text("""
+            UPDATE NSEDATA.dbo.ScheduledOrders 
+            SET Status = :status 
+            WHERE ScheduledOrderID = :order_id AND Broker = :broker
+        """)
+        with self.lock:
             try:
-                schedule_datetime = order.get("schedule_datetime")
-                if schedule_datetime and datetime.now() >= schedule_datetime:
-                    api = upstox_apis["order"] if order["broker"] == "Upstox" else kite_apis["kite"]
-                    result = await place_order(
-                        api, order["instrument_token"], order["transaction_type"],
-                        order["quantity"], order["price"], order["order_type"],
-                        order["trigger_price"], order["is_amo"], order["product"],
-                        order["validity"], order["stop_loss"], order["target"],
-                        remarks=order["tag"], broker=order["broker"]
-                    )
-                    if result:
-                        order_id = result.data.order_id if order["broker"] == "Upstox" else result
-                        notify(f"Scheduled Order Executed", f"Order ID: {order_id}")
-                        logger.info(f"Scheduled order executed: {order_id}")
-                        self.scheduled_order_queue = [
-                            o for o in self.scheduled_order_queue if o["order_id"] != order["order_id"]
-                        ]
-                        query = text("DELETE FROM NSEDATA.dbo.ScheduledOrders WHERE ScheduledOrderID = :order_id")
-                        with engine.connect() as conn:
-                            with conn.begin():
-                                conn.execute(query, {"order_id": order["order_id"]})
-                    else:
-                        logger.error(f"Failed to execute scheduled order: {order['order_id']}")
-            except Exception as e:
-                logger.error(f"Error executing scheduled order {order['order_id']}: {str(e)}")
+                with engine.connect() as conn:
+                    with conn.begin():
+                        conn.execute(query, {"status": status, "order_id": order_id, "broker": self.broker})
+                    logger.info(f"Updated scheduled order {order_id} status to {status}")
+            except OperationalError as e:
+                logger.error(f"Database error in _update_scheduled_order_status: {str(e)}")
 
-    def update_scheduled_order(self, order_id, quantity=None, price=None, trigger_price=None, schedule_time=None,
-                             stop_loss=None, target=None, status=None):
-        """Update or cancel a scheduled order."""
-        async def update():
-            async with self.order_lock:
-                for order in self.scheduled_order_queue:
-                    if order["ScheduledOrderID"] == order_id:
-                        if quantity is not None:
-                            order["Quantity"] = quantity
-                        if price is not None:
-                            order["Price"] = price
-                        if trigger_price is not None:
-                            order["TriggerPrice"] = trigger_price
-                        if schedule_time is not None:
-                            order["ScheduleDateTime"] = schedule_time
-                        if stop_loss is not None:
-                            order["StopLoss"] = stop_loss
-                        if target is not None:
-                            order["Target"] = target
-                        if status == "CANCELLED":
-                            self.scheduled_order_queue.remove(order)
-                            query = text("DELETE FROM NSEDATA.dbo.ScheduledOrders WHERE ScheduledOrderID = :order_id")
-                            with engine.connect() as conn:
-                                with conn.begin():
-                                    conn.execute(query, {"order_id": order_id})
-                        else:
-                            query = text("""
-                                UPDATE NSEDATA.dbo.ScheduledOrders 
-                                SET Quantity = :quantity, Price = :price, TriggerPrice = :trigger_price,
-                                    ScheduleDateTime = :schedule_time, StopLoss = :stop_loss, Target = :target
-                                WHERE ScheduledOrderID = :order_id
-                            """)
-                            with engine.connect() as conn:
-                                with conn.begin():
-                                    conn.execute(query, {
-                                        "quantity": quantity,
-                                        "price": price,
-                                        "trigger_price": trigger_price,
-                                        "schedule_time": schedule_time,
-                                        "stop_loss": stop_loss,
-                                        "target": target,
-                                        "order_id": order_id
-                                    })
-                        logger.info(f"Updated scheduled order: {order_id}")
-                        break
-        run_async(update())
-
-    async def place_gtt_order(self, api, instrument_token, trading_symbol, transaction_type, quantity,
-                              trigger_type, trigger_price, limit_price, last_price,
-                              second_trigger_price=None, second_limit_price=None,
-                              broker="Zerodha"):
-        """Place a GTT order (single or two-leg/OCO) with the specified parameters."""
-        try:
-            if broker != "Zerodha":
-                logger.warning(f"GTT orders not supported for {broker}. Falling back to SL/Limit orders.")
-                # Fallback for Upstox (unchanged)
-                await place_order(api, instrument_token, transaction_type, quantity, limit_price,
-                                  "LIMIT", trigger_price, False, "CNC", "DAY", None, None, broker)
-                return {"status": "success", "gtt_id": None}
-
-            # Construct GTT condition and orders
-            condition = {
-                "exchange": "NSE",
-                "tradingsymbol": trading_symbol,
-                "last_price": last_price
-            }
-
-            if trigger_type == "single":
-                condition["trigger_values"] = [trigger_price]
-                orders = [{
-                    "exchange": "NSE",
-                    "tradingsymbol": trading_symbol,
-                    "product": "CNC",
-                    "order_type": "LIMIT",
-                    "transaction_type": transaction_type,
-                    "quantity": quantity,
-                    "price": limit_price
-                }]
-            else:  # OCO (two-leg)
-                condition["trigger_values"] = [trigger_price, second_trigger_price]
-                orders = [
-                    {
-                        "exchange": "NSE",
-                        "tradingsymbol": trading_symbol,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "transaction_type": transaction_type,
-                        "quantity": quantity,
-                        "price": limit_price
-                    },
-                    {
-                        "exchange": "NSE",
-                        "tradingsymbol": trading_symbol,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "transaction_type": transaction_type,
-                        "quantity": quantity,
-                        "price": second_limit_price
-                    }
-                ]
-
-            # Place GTT order
-            response = api.place_gtt(
-                trigger_type=trigger_type,
-                tradingsymbol=trading_symbol,
-                exchange="NSE",
-                trigger_values=condition["trigger_values"],
-                last_price=condition["last_price"],
-                orders=orders
-            )
-
-            gtt_id = response.get("trigger_id")
-            logger.info(f"GTT placed: ID={gtt_id}, Type={trigger_type}, Symbol={trading_symbol}, "
-                        f"Trigger(s)={condition['trigger_values']}, Status={response.get('status')}")
-
-            # Store in database
-            query = text("""
-                INSERT INTO NSEDATA.dbo.GTTOrders 
-                (GTTOrderID, InstrumentToken, TradingSymbol, TransactionType, Quantity, 
-                 TriggerType, TriggerPrice, LimitPrice, SecondTriggerPrice, SecondLimitPrice, 
-                 Status, Broker, CreatedAt)
-                VALUES (:gtt_id, :instrument_token, :trading_symbol, :transaction_type, :quantity, 
-                        :trigger_type, :trigger_price, :limit_price, :second_trigger_price, 
-                        :second_limit_price, :status, :broker, GETDATE())
-            """)
-            with engine.connect() as conn:
-                with conn.begin():
-                    conn.execute(query, {
-                        "gtt_id": gtt_id,
-                        "instrument_token": instrument_token,
-                        "trading_symbol": trading_symbol,
-                        "transaction_type": transaction_type,
-                        "quantity": quantity,
-                        "trigger_type": trigger_type,
-                        "trigger_price": trigger_price,
-                        "limit_price": limit_price,
-                        "second_trigger_price": second_trigger_price,
-                        "second_limit_price": second_limit_price,
-                        "status": "active",
-                        "broker": broker
-                    })
-
-            return {"status": "success", "gtt_id": gtt_id}
-        except Exception as e:
-            logger.error(f"Error placing GTT order for {trading_symbol}: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def modify_gtt_order(self, gtt_id, trading_symbol, transaction_type, quantity,
-                              trigger_type, trigger_price, limit_price, last_price,
-                              second_trigger_price=None, second_limit_price=None):
-        """Modify an existing GTT order."""
-        try:
-            # Construct GTT condition and orders
-            condition = {
-                "exchange": "NSE",
-                "tradingsymbol": trading_symbol,
-                "last_price": last_price
-            }
-
-            if trigger_type == "single":
-                condition["trigger_values"] = [trigger_price]
-                orders = [{
-                    "exchange": "NSE",
-                    "tradingsymbol": trading_symbol,
-                    "product": "CNC",
-                    "order_type": "LIMIT",
-                    "transaction_type": transaction_type,
-                    "quantity": quantity,
-                    "price": limit_price
-                }]
-            else:  # OCO (two-leg)
-                condition["trigger_values"] = [trigger_price, second_trigger_price]
-                orders = [
-                    {
-                        "exchange": "NSE",
-                        "tradingsymbol": trading_symbol,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "transaction_type": transaction_type,
-                        "quantity": quantity,
-                        "price": limit_price
-                    },
-                    {
-                        "exchange": "NSE",
-                        "tradingsymbol": trading_symbol,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "transaction_type": transaction_type,
-                        "quantity": quantity,
-                        "price": second_limit_price
-                    }
-                ]
-            response = await asyncio.to_thread(
-                kite_apis["kite"].modify_gtt,
-                trigger_id=gtt_id,
-                trigger_type=trigger_type,
-                tradingsymbol=trading_symbol,
-                exchange="NSE",
-                trigger_values=condition["trigger_values"],
-                last_price=condition["last_price"],
-                orders=orders
-            )
-            notify("GTT Order Modified", f"GTT ID: {gtt_id}")
-            logger.info(f"GTT order modified: {gtt_id}")
-            return response
-        except Exception as e:
-            logger.error(f"Error modifying GTT order {gtt_id}: {str(e)}")
-            st.error(f"Failed to modify GTT order: {str(e)}")
-            return None
-
-    async def delete_gtt_order(self, gtt_id):
-        """Delete a GTT order."""
-        try:
-            response = await asyncio.to_thread(
-                kite_apis["kite"].delete_gtt,
-                trigger_id=gtt_id
-            )
-            notify("GTT Order Deleted", f"GTT ID: {gtt_id}")
-            logger.info(f"GTT order deleted: {gtt_id}")
-            return response
-        except Exception as e:
-            logger.error(f"Error deleting GTT order {gtt_id}: {str(e)}")
-            st.error(f"Failed to delete GTT order: {str(e)}")
-            return None
-
-    async def run_auto_orders(self):
-        """Execute auto orders during market hours."""
+    def run_auto_orders(self):
+        """Execute auto orders during market hours with batch processing."""
         if "auto_orders" not in st.session_state or not st.session_state["auto_orders"]:
             logger.info(f"No auto orders defined for {self.broker}")
             return "No auto orders to execute."
 
         now = datetime.now().time()
         if not (self.market_open <= now <= self.market_close):
-            logger.info(f"Current time {now} is outside market hours")
-            return "Market is closed."
+            logger.info(f"Current time {now} is outside market hours ({self.market_open}-{self.market_close})")
+            return "Market is closed. Auto orders will run at next market open."
 
-        if "last_auto_order_run" in st.session_state and st.session_state["last_auto_order_run"].date() == datetime.now().date():
+        if "last_auto_order_run" in st.session_state and st.session_state[
+            "last_auto_order_run"].date() == datetime.now().date():
             logger.info("Auto orders already executed today")
             return "Auto orders already executed today."
 
         results = []
+        error_count = 0
+        max_errors = 5
         api = upstox_apis["order"] if self.broker == "Upstox" else kite_apis["kite"]
-        tokens = [order["InstrumentToken"] for order in st.session_state["auto_orders"] if order["Broker"] == self.broker]
-        market_data = await self._batch_get_market_quotes(tokens)
+
+        # Batch fetch market data
+        tokens = [order["InstrumentToken"] for order in st.session_state["auto_orders"] if
+                  order["Broker"] == self.broker]
+        market_data = self._batch_get_market_quotes(tokens)
         historical_data_cache = {}
 
         for order in st.session_state["auto_orders"]:
@@ -647,6 +407,7 @@ class OrderManager:
                 instrument_token = order["InstrumentToken"]
                 live_data = market_data.get(instrument_token, {})
                 if not live_data or "ltp" not in live_data:
+                    logger.error(f"No market data for {instrument_token}")
                     results.append(f"Failed to fetch live data for {instrument_token}")
                     continue
 
@@ -661,18 +422,21 @@ class OrderManager:
                 order_type = order["OrderType"]
                 limit_price = order["LimitPrice"]
 
+                # Cache historical data
                 if instrument_token not in historical_data_cache:
                     hist_data = get_historical_data(instrument_token)
                     historical_data_cache[instrument_token] = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 
                 df = historical_data_cache[instrument_token]
                 if df.empty:
+                    logger.error(f"No historical data for {instrument_token}")
                     results.append(f"Failed to fetch historical data for {instrument_token}")
                     continue
 
-                funds_data = await self._get_funds_data()
+                # Calculate position sizing
+                funds_data = self._get_funds_data()
                 available_margin = (funds_data["data"]["equity"]["available_margin"] if self.broker == "Upstox"
-                                  else funds_data["equity"]["available_margin"] if funds_data else 0)
+                                    else funds_data["equity"]["available_margin"] if funds_data else 0)
                 risk_amount = available_margin * (risk_per_trade / 100)
 
                 if stop_loss_type == "Fixed Amount":
@@ -680,21 +444,32 @@ class OrderManager:
                     target_price = current_price - target_value if transaction_type == "SELL" else current_price + target_value
                     quantity = int(risk_amount / stop_loss_value)
                 elif stop_loss_type == "Percentage of Entry":
-                    stop_loss_price = current_price * (1 + stop_loss_value / 100) if transaction_type == "SELL" else current_price * (1 - stop_loss_value / 100)
-                    target_price = current_price * (1 - target_value / 100) if transaction_type == "SELL" else current_price * (1 + target_value / 100)
+                    stop_loss_price = current_price * (
+                                1 + stop_loss_value / 100) if transaction_type == "SELL" else current_price * (
+                                1 - stop_loss_value / 100)
+                    target_price = current_price * (
+                                1 - target_value / 100) if transaction_type == "SELL" else current_price * (
+                                1 + target_value / 100)
                     quantity = int(risk_amount / (current_price * (stop_loss_value / 100)))
                 else:
                     atr = calculate_atr(df, atr_period).iloc[-1] if not df.empty else 0
-                    stop_loss_price = current_price + (atr * stop_loss_value) if transaction_type == "SELL" else current_price - (atr * stop_loss_value)
-                    target_price = current_price - (atr * target_value) if transaction_type == "SELL" else current_price + (atr * target_value)
+                    stop_loss_price = current_price + (
+                                atr * stop_loss_value) if transaction_type == "SELL" else current_price - (
+                                atr * stop_loss_value)
+                    target_price = current_price - (
+                                atr * target_value) if transaction_type == "SELL" else current_price + (
+                                atr * target_value)
                     quantity = int(risk_amount / (atr * stop_loss_value)) if atr > 0 else 1
 
                 quantity = max(1, quantity)
                 if quantity <= 0 or stop_loss_price <= 0 or target_price <= 0:
+                    logger.error(
+                        f"Invalid order parameters for {instrument_token}: quantity={quantity}, SL={stop_loss_price}, Target={target_price}")
                     results.append(f"Invalid order parameters for {instrument_token}")
                     continue
 
-                order_response = await place_order(
+                # Place order
+                order_response = place_order(
                     api, instrument_token, transaction_type, quantity,
                     price=limit_price if order_type == "LIMIT" else 0,
                     order_type=order_type, product_type=product_type, is_amo=False, broker=self.broker,
@@ -702,27 +477,42 @@ class OrderManager:
                 )
                 if order_response:
                     order_id = order_response.data.order_id if self.broker == "Upstox" else order_response
+                    logger.info(f"Auto order placed for {instrument_token}: Order ID {order_id}")
                     results.append(f"Auto order placed for {instrument_token}: Order ID {order_id}")
                     notify("Auto Order Placed", f"Order ID: {order_id}", "success")
                 else:
+                    logger.error(f"Failed to place auto order for {instrument_token}")
                     results.append(f"Failed to place auto order for {instrument_token}")
+                    error_count += 1
+
+                if error_count >= max_errors:
+                    logger.error(f"Too many errors ({error_count}), pausing auto order execution")
+                    notify("Auto Order Paused", f"Too many errors ({error_count})", "error")
+                    break
+
             except Exception as e:
+                logger.exception(f"Error processing auto order for {instrument_token}: {str(e)}")
                 results.append(f"Error processing auto order for {instrument_token}: {str(e)}")
+                error_count += 1
+                if error_count >= max_errors:
+                    logger.error(f"Too many errors ({error_count}), pausing auto order execution")
+                    notify("Auto Order Paused", f"Too many errors ({error_count})", "error")
+                    break
 
         st.session_state["last_auto_order_run"] = datetime.now()
         return "\n".join(results)
 
     @st.cache_data(ttl=300)
-    async def _batch_get_market_quotes(self, instrument_tokens):
-        """Batch fetch market quotes."""
+    def _batch_get_market_quotes(self, instrument_tokens):
+        """Batch fetch market quotes for multiple instruments."""
         try:
             quotes = upstox_apis["market_data"].get_market_quote(instrument_tokens).data
             return {token: quote for token, quote in quotes.items() if quote}
         except Exception as e:
-            logger.error(f"Error fetching batch market quotes: {str(e)}")
+            logger.exception(f"Error fetching batch market quotes: {str(e)}")
             return {}
 
-    async def _get_funds_data(self):
+    def _get_funds_data(self):
         """Fetch funds data with caching."""
         if "funds_data" not in st.session_state or (
                 datetime.now() - st.session_state.get("funds_data_timestamp", datetime.min)).total_seconds() > 300:
@@ -731,35 +521,74 @@ class OrderManager:
                 st.session_state["funds_data"] = funds_data
                 st.session_state["funds_data_timestamp"] = datetime.now()
             except Exception as e:
-                logger.error(f"Error fetching funds data: {str(e)}")
+                logger.exception(f"Error fetching funds data: {str(e)}")
                 return {}
         return st.session_state["funds_data"]
 
+    def update_scheduled_order(self, order_id, new_quantity=None, new_price=None, new_trigger_price=None,
+                               new_schedule_time=None, new_stop_loss=None, new_target=None, status=None):
+        """Update a scheduled order with thread-safe database access."""
+        updates = []
+        params = {"order_id": order_id, "broker": self.broker}
+        if new_quantity is not None:
+            updates.append("Quantity = :new_quantity")
+            params["new_quantity"] = new_quantity
+        if new_price is not None:
+            updates.append("Price = :new_price")
+            params["new_price"] = new_price
+        if new_trigger_price is not None:
+            updates.append("TriggerPrice = :new_trigger_price")
+            params["new_trigger_price"] = new_trigger_price
+        if new_schedule_time is not None:
+            updates.append("ScheduleDateTime = :new_schedule_time")
+            params["new_schedule_time"] = new_schedule_time
+        if new_stop_loss is not None:
+            updates.append("StopLoss = :new_stop_loss")
+            params["new_stop_loss"] = new_stop_loss
+        if new_target is not None:
+            updates.append("Target = :new_target")
+            params["new_target"] = new_target
+        if status is not None:
+            updates.append("Status = :status")
+            params["status"] = status
+
+        if updates:
+            query = text(
+                f"UPDATE NSEDATA.dbo.ScheduledOrders SET {', '.join(updates)} WHERE ScheduledOrderID = :order_id AND Broker = :broker")
+            try:
+                with self.lock:
+                    with engine.connect() as conn:
+                        with conn.begin():
+                            conn.execute(query, params)
+                        logger.info(f"Updated scheduled order {order_id}: {updates}")
+            except OperationalError as e:
+                logger.error(f"Database error in update_scheduled_order: {str(e)}")
+                notify("Scheduled Order Update Failed", f"Order ID: {order_id}, Error: {str(e)}",
+                       "error")
+
     def recover_session_state(self):
         """Recover scheduled and auto orders from the database."""
-        self._load_scheduled_orders()
-        logger.info(f"Recovered {len(self.scheduled_order_queue)} pending scheduled orders for {self.broker}")
-        query = text("SELECT * FROM NSEDATA.dbo.AutoOrders WHERE Broker = :broker")
-        try:
-            with engine.connect() as conn:
-                auto_orders_df = pd.read_sql(query, conn, params={"broker": self.broker})
-            if not auto_orders_df.empty:
-                st.session_state["auto_orders"] = auto_orders_df.to_dict('records')
-                logger.info(f"Recovered {len(st.session_state['auto_orders'])} auto orders for {self.broker}")
-            else:
+        with self.lock:
+            while not self.scheduled_order_queue.empty():
+                self.scheduled_order_queue.get()
+            self._load_scheduled_orders()
+            logger.info(f"Recovered {self.scheduled_order_queue.qsize()} pending scheduled orders for {self.broker}")
+            query = text("SELECT * FROM NSEDATA.dbo.AutoOrders WHERE Broker = :broker")
+            try:
+                with engine.connect() as conn:
+                    auto_orders_df = pd.read_sql(query, conn, params={"broker": self.broker})
+                if not auto_orders_df.empty:
+                    st.session_state["auto_orders"] = auto_orders_df.to_dict('records')
+                    logger.info(f"Recovered {len(st.session_state['auto_orders'])} auto orders for {self.broker}")
+                else:
+                    st.session_state["auto_orders"] = []
+                    logger.info(f"No auto orders to recover for {self.broker}")
+            except OperationalError as e:
+                logger.error(f"Database error in recover_session_state: {str(e)}")
                 st.session_state["auto_orders"] = []
-                logger.info(f"No auto orders to recover for {self.broker}")
-        except Exception as e:
-            logger.error(f"Database error in recover_session_state: {str(e)}")
-            st.session_state["auto_orders"] = []
 
 
 def init_apis():
-    """Initialize Upstox and Zerodha APIs."""
-    if "apis_initialized" in st.session_state and st.session_state["apis_initialized"]:
-        logger.debug("Using cached APIs")
-        return st.session_state["upstox_apis"], st.session_state["kite_apis"]
-
     try:
         config = upstox_client.Configuration()
         config.access_token = st.session_state.get("access_token", UPSTOX_ACCESS_TOKEN)
@@ -777,9 +606,6 @@ def init_apis():
         if access_token:
             kite.set_access_token(access_token)
         kite_apis = {"kite": kite}
-        st.session_state["upstox_apis"] = upstox_apis
-        st.session_state["kite_apis"] = kite_apis
-        st.session_state["apis_initialized"] = True
         logger.info("APIs initialized successfully")
         return upstox_apis, kite_apis
     except Exception as e:
@@ -791,97 +617,34 @@ def init_apis():
 upstox_apis, kite_apis = init_apis()
 
 
-def setup_initial_state():
-    """Set up initial state and perform startup tasks (database, APIs, instruments)."""
-    logger.info("Database connection created successfully.")
-    logger.info("APIs initialized successfully")
-    logger.info("Instruments data loaded")
-    if "app_initialized" not in st.session_state:
-        st.session_state["app_initialized"] = False
-    if "async_tasks" not in st.session_state:
-        st.session_state["async_tasks"] = []
-
-async def initialize_app_async():
-    """Initialize OrderMonitor and OrderManager asynchronously."""
-    logger.info("Starting initialize_app_async")
-    try:
-        logger.debug("Checking for existing tasks")
-        # Cancel existing tasks
-        if "monitor_task" in st.session_state and not st.session_state["monitor_task"].done():
-            logger.debug("Cancelling existing monitor task")
-            st.session_state["monitor_task"].cancel()
-            try:
-                await st.session_state["monitor_task"]
-            except asyncio.CancelledError:
-                logger.info("Cancelled existing monitor task")
-        if "manager_task" in st.session_state and not st.session_state["manager_task"].done():
-            logger.debug("Cancelling existing manager task")
-            st.session_state["manager_task"].cancel()
-            try:
-                await st.session_state["manager_task"]
-            except asyncio.CancelledError:
-                logger.info("Cancelled existing manager task")
-        if "order_monitor" in st.session_state:
-            logger.debug("Cancelling all OrderMonitor tasks")
-            await st.session_state["order_monitor"].cancel_all_tasks()
-
-        # Initialize OrderMonitor
-        logger.debug("Initializing OrderMonitor")
-        st.session_state["order_monitor"] = OrderMonitor()
-        logger.info("OrderMonitor initialized in app")
-        # Schedule run_scheduled_tasks as a persistent background task
-        st.session_state["monitor_task"] = run_async(
-            st.session_state["order_monitor"].run_scheduled_tasks(),
-            wait_for_completion=False
+# Main app initialization
+def initialize_app():
+    """Initialize ThreadManager and OrderManager."""
+    if "thread_manager" not in st.session_state:
+        with threading.Lock():
+            st.session_state["thread_manager"] = ThreadManager()
+            cleanup_future = st.session_state["thread_manager"].executor.submit(st.session_state["thread_manager"].periodic_cleanup)
+            with st.session_state["thread_manager"].lock:
+                st.session_state["thread_manager"].registry["ThreadCleanup"] = {
+                    "future": cleanup_future, "stop_event": threading.Event()
+                }
+            logger.info("ThreadManager initialized in app")
+    if "order_manager" not in st.session_state:
+        with threading.Lock():
+            st.session_state["order_manager"] = OrderManager(st.session_state["thread_manager"])
+            st.session_state["order_manager"].start()
+            logger.info("OrderManager initialized in app")
+    if "order_sync_initialized" not in st.session_state:
+        st.session_state["thread_manager"].sync_order_statuses(upstox_apis["order"], kite_apis["kite"])
+        st.session_state["order_sync_initialized"] = True
+    if "risk_check_initialized" not in st.session_state:
+        auto_orders = st.session_state.get("auto_orders", [])
+        st.session_state["thread_manager"].start_risk_check(
+            upstox_apis["user"] if st.session_state["select_broker"] == "Upstox" else kite_apis["kite"],
+            auto_orders, None
         )
-        logger.debug(f"Scheduled OrderMonitor task: {st.session_state['monitor_task']}")
-
-        # Initialize OrderManager
-        logger.debug("Initializing OrderManager")
-        st.session_state["order_manager"] = OrderManager(st.session_state["order_monitor"])
-        logger.info("OrderManager initialized in app")
-        # Schedule OrderManager.start as a persistent background task
-        st.session_state["manager_task"] = run_async(
-            st.session_state["order_manager"].start(),
-            wait_for_completion=False
-        )
-        logger.debug(f"Scheduled OrderManager task: {st.session_state['manager_task']}")
-
-        st.session_state["app_initialized"] = True
-        logger.info("Application initialization completed")
-        st.success("Application initialized successfully")
-    except Exception as e:
-        logger.error(f"Error during async initialization: {str(e)}", exc_info=True)
-        st.error(f"Initialization failed: {str(e)}")
-        st.session_state["app_initialized"] = False
-        raise
-
-def initialize_app(reset_state=False):
-    """Initialize the application, optionally resetting state."""
-    logger.info("Initialize Application button clicked")
-    try:
-        # Reset state if forced
-        if reset_state:
-            logger.info("Resetting application state")
-            st.session_state["app_initialized"] = False
-            if "order_monitor" in st.session_state:
-                run_async(st.session_state["order_monitor"].cancel_all_tasks(), wait_for_completion=True)
-            st.session_state.pop("order_monitor", None)
-            st.session_state.pop("order_manager", None)
-            st.session_state.pop("monitor_task", None)
-            st.session_state.pop("manager_task", None)
-
-        # Initialize if not already done
-        if not st.session_state.get("app_initialized", False):
-            logger.info("Starting application initialization")
-            task = run_async(initialize_app_async(), wait_for_completion=True)
-            logger.debug(f"Initialization task scheduled: {task}")
-        else:
-            logger.info("Application already initialized, use 'Force Reinitialize' to reset")
-            st.warning("Application already initialized. Use 'Force Reinitialize' to reset.")
-    except Exception as e:
-        logger.error(f"Error during initialization: {str(e)}", exc_info=True)
-        st.error(f"Initialization failed: {str(e)}")
+        st.session_state["risk_check_initialized"] = True
+    st.session_state["app_initialized"] = True
 
 
 # NEW: Zerodha authentication
@@ -980,73 +743,11 @@ def notify(title, message, type='success'):
         send_email(title, message)
 
 
-def run_async(coro, wait_for_completion=True):
-    """Run an async coroutine in a synchronous context using Streamlit's event loop.
-
-    Args:
-        coro: The coroutine to run.
-        wait_for_completion: If True, wait for the task to complete (suitable for one-off tasks).
-                            If False, schedule without waiting (suitable for persistent tasks).
-    """
-    logger.debug(f"Scheduling coroutine: {coro}, wait_for_completion={wait_for_completion}")
-    try:
-        # Try to get Streamlit's running event loop
-        loop = asyncio.get_running_loop()
-        logger.debug(f"Using running loop: {loop}")
-    except RuntimeError:
-        # Fallback: Use Streamlit's runtime loop or create a new one
-        try:
-            from streamlit.runtime.scriptrunner import get_script_run_ctx
-            ctx = get_script_run_ctx()
-            if ctx and hasattr(ctx, 'event_loop'):
-                loop = ctx.event_loop
-                logger.debug(f"Using Streamlit script run context loop: {loop}")
-            else:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                logger.debug("Created new event loop")
-        except Exception as e:
-            logger.error(f"Failed to get Streamlit context loop: {str(e)}")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            logger.debug("Created new event loop as fallback")
-
-    # Configure thread pool if not already set
-    if not hasattr(loop, '_default_executor'):
-        loop.set_default_executor(ThreadPoolExecutor(max_workers=4))
-        logger.debug("Configured ThreadPoolExecutor with max_workers=4")
-
-    # Schedule task
-    task = asyncio.ensure_future(coro, loop=loop)
-    if "async_tasks" not in st.session_state:
-        st.session_state["async_tasks"] = []
-    st.session_state["async_tasks"].append(task)
-    task.add_done_callback(
-        lambda t: st.session_state["async_tasks"].remove(t)
-        if t in st.session_state["async_tasks"]
-        else None
-    )
-    logger.debug(f"Scheduled task: {task}")
-
-    # Wait for completion only if requested
-    if wait_for_completion:
-        try:
-            if not loop.is_running():
-                loop.run_until_complete(task)
-            else:
-                future = asyncio.run_coroutine_threadsafe(coro, loop)
-                future.result(timeout=10)  # Wait up to 10 seconds for one-off tasks
-        except Exception as e:
-            logger.error(f"Error running task: {str(e)}", exc_info=True)
-            raise
-    return task
-
 # Place Order (Upstox or Zerodha)
-async def place_order(api, instrument_token, transaction_type, quantity, price=0, order_type="MARKET",
-                     trigger_price=0, is_amo=False, product_type="D", validity='DAY', stop_loss=None, target=None,
-                     remarks='Primary', primary_order='', broker="Upstox"):
+def place_order(api, instrument_token, transaction_type, quantity, price=0, order_type="MARKET",
+                trigger_price=0, is_amo=False, product_type="D", validity='DAY', stop_loss=None, target=None,
+                remarks='Primary', primary_order='', broker="Upstox"):
     try:
-        trading_symbol = get_symbol_for_instrument(instrument_token=instrument_token)
         if broker == "Upstox":
             order = upstox_client.PlaceOrderRequest(
                 quantity=quantity,
@@ -1063,10 +764,12 @@ async def place_order(api, instrument_token, transaction_type, quantity, price=0
             )
             response = api.place_order(order, api_version="v2")
             primary_order_id = response.data.order_id
-        else:
+        elif broker == "Zerodha":
+            # Map Upstox parameters to Zerodha
+            # zerodha_product = {"I": "MIS", "D": "CNC"}.get(product_type, "CNC")
             zerodha_validity = "DAY" if validity == "DAY" else "IOC"
             order_params = {
-                "tradingsymbol": trading_symbol,
+                "tradingsymbol": get_symbol_for_instrument(instrument_token=instrument_token),
                 "exchange": instrument_token.split("|")[0].replace("_EQ", ""),
                 "transaction_type": transaction_type,
                 "order_type": order_type,
@@ -1077,19 +780,20 @@ async def place_order(api, instrument_token, transaction_type, quantity, price=0
                 "trigger_price": trigger_price if order_type in ["SL", "SL-M"] else 0,
                 "tag": "StreamlitOrder"
             }
+            print(order_params)
             response = api.place_order(
                 variety=api.VARIETY_REGULAR if not is_amo else api.VARIETY_AMO,
                 **order_params
             )
             primary_order_id = response
 
-        notify(f"Order Placed: {transaction_type} for {trading_symbol}", f"Order ID: {response}")
+        notify(f"Order Placed: {transaction_type}", f"Order ID: {response}")
 
+        # Save to SQL
         order_data = pd.DataFrame([{
             "OrderID": primary_order_id,
             "Broker": broker,
             "PrimaryOrderID": primary_order,
-            "TradingSymbol": trading_symbol,
             "InstrumentToken": instrument_token,
             "TransactionType": transaction_type,
             "Quantity": quantity,
@@ -1103,11 +807,12 @@ async def place_order(api, instrument_token, transaction_type, quantity, price=0
         }])
         load_sql_data(order_data, "Orders", load_type="append", index_required=False, database=DATABASE)
 
+        # Monitor and log trade
         if stop_loss or target:
-            asyncio.create_task(st.session_state["order_monitor"].monitor_order(
-                primary_order_id, instrument_token, trading_symbol, transaction_type, quantity,
+            st.session_state["thread_manager"].start_order_monitor(
+                primary_order_id, instrument_token, transaction_type, quantity,
                 product_type, stop_loss, target, api, broker
-            ))
+            )
 
         return response
     except Exception as e:
@@ -1256,35 +961,12 @@ def get_portfolio(upstox_api, zerodha_api):
     return pd.DataFrame(holdings)
 
 
-def get_gtt_orders(zerodha_api):
-    """Fetch GTT orders (Zerodha only)."""
-    try:
-        gtt_orders = zerodha_api.get_gtts()
-        gtt_list = [{
-            "Broker": "Zerodha",
-            "GTT ID": gtt["id"],
-            "Symbol": gtt["condition"]["tradingsymbol"],
-            "Exchange": gtt["condition"]["exchange"],
-            "Transaction Type": gtt["orders"][0]["transaction_type"],
-            "Quantity": gtt["orders"][0]["quantity"],
-            "Trigger Price": gtt["condition"]["trigger_values"][0],
-            "Limit Price": gtt["orders"][0]["price"],
-            "Status": gtt["status"],
-            "Created At": gtt["created_at"],
-            "Expires At": gtt["expires_at"],
-            "Result": gtt["orders"][0]["result"]["order_result"]["status"] if gtt["orders"][0]["result"] else None,
-        } for gtt in gtt_orders]
-        return pd.DataFrame(gtt_list)
-    except Exception as e:
-        st.error(f"Failed to fetch GTT orders: {e}")
-        return pd.DataFrame()
-
-
 # Sidebar
 with st.sidebar:
     st.subheader("Navigation")
     page = st.radio("Go to",
-                    ["Order Management", "Order Book", "Positions", "Trade Dashboard", "Portfolio", "Get Token"])
+                    ["Order Management", "Order Book", "Positions", "Trade Dashboard", "Portfolio",
+                     "Analytics", "Algo Trading", "Strategy Backtest", "Get Token"])
     st.subheader("Notification Settings")
     st.session_state["email_notifications"] = st.checkbox("Enable Email Notifications", value=False)
 
@@ -1292,21 +974,6 @@ with st.sidebar:
     notify_channel = st.sidebar.selectbox("Channel", ["Streamlit Toast", "Email"])
     if notify_channel == "Email":
         email_address = st.sidebar.text_input("Email Address")
-
-    st.subheader("Monitoring Settings")
-    st.session_state["polling_interval"] = st.number_input("Polling Interval (seconds)", min_value=10, value=60,
-                                                           step=10)
-    if st.button("Sync Orders"):
-        with st.spinner("Syncing orders..."):
-            run_async(st.session_state["order_monitor"].sync_order_statuses(
-                st.session_state.get("upstox_apis", {}).get("order"),
-                st.session_state.get("kite_apis", {}).get("kite")
-            ))
-            if st.session_state["select_broker"] == "Zerodha":
-                run_async(st.session_state["order_monitor"].sync_gtt_orders(
-                    st.session_state.get("kite_apis", {}).get("kite")
-                ))
-            st.success("Order sync completed")
 
     st.subheader("Risk Management Settings")
     max_risk_threshold = st.sidebar.number_input("Max Risk Threshold (% of Capital)", min_value=1.0, value=5.0,
@@ -1328,12 +995,12 @@ if 'instruments_data' not in st.session_state:
 instruments = st.session_state.get('instruments_data', {})
 
 # Main app logic
-st.subheader("Stock Trading Dashboard")
+st.title("Stock Trading Dashboard")
 if not st.session_state.get("app_initialized", False):
     if st.button("Initialize Application"):
-        initialize_app()
-    if st.button("Force Reinitialize"):
-        initialize_app(reset_state=True)
+        with st.spinner("Initializing application..."):
+            initialize_app()
+            st.success("Application initialized successfully")
 else:
     st.info("Application is running")
 
@@ -1376,298 +1043,222 @@ elif page == "Order Management":
         except:
             st.markdown(f'<div class="metric-box">Unable to fetch {broker} funds data</div>', unsafe_allow_html=True)
 
-    tabs = st.tabs(["Regular Orders", "GTT Orders"])
-    with tabs[0]:
-        num_orders = funds_cols[2].number_input("Number of Orders", min_value=1, max_value=10, value=1, step=1)
-        orders = []
-        for i in range(num_orders):
-            st.markdown(f":rainbow[Order {i + 1}]")
-            multi_order_cols = st.columns(9)
-            stock_symbol = multi_order_cols[0].selectbox("Select Symbol", options=instruments.keys(), key=f"multi_order_{i}")
-            instrument_token = instruments.get(stock_symbol)
-            with st.expander("Calculate Position Size", expanded=False):
-                capital = st.number_input("Total Capital (Rs.)", min_value=1000, value=50000, step=1000, key=f"multi_capital_{i}")
-                risk_per_trade = st.number_input("Risk per Trade (%)", min_value=0.1, value=1.0, step=0.1, key=f"multi_risk_{i}")
-                product_type = st.selectbox("Product Type", ['I', 'D'] if broker == "Upstox" else ['MIS', 'CNC'], key=f"multi_product_calc_{i}")
-                if product_type in ['I', 'MIS']:
-                    transaction_type = st.radio("Transaction Type", ["BUY", "SELL"], horizontal=True, key=f"multi_trans_calc_{i}")
-                else:
-                    transaction_type = "BUY"
-                stop_loss_type = st.selectbox("Stop Loss Type", ["Fixed Amount", "Percentage of Entry", "ATR Based"], key=f"multi_sl_type_{i}")
-                live_data = get_market_quote(upstox_apis['market_data'], instrument_token)
-                entry_price = live_data.get('ltp', 0) if live_data else 0
-                if stop_loss_type == "Fixed Amount":
-                    stop_loss_value = st.number_input("Stop Loss Value (Rs.)", min_value=1.0, value=100.0, step=1.0, key=f"multi_sl_fixed_{i}")
-                    target_value = st.number_input("Target Value (Rs.)", min_value=1.0, value=250.0, step=1.0, key=f"multi_target_fixed_{i}")
-                elif stop_loss_type == "Percentage of Entry":
-                    stop_loss_percent = st.number_input("Stop Loss (%)", min_value=0.1, value=1.0, step=0.1, key=f"multi_sl_pct_{i}")
-                    target_percent = st.number_input("Target (%)", min_value=0.1, value=2.5, step=0.1, key=f"multi_target_pct_{i}")
-                else:
-                    atr_period = st.number_input("ATR Period", min_value=5, value=14, step=1, key=f"multi_atr_period_{i}")
-                    stop_loss_atr_mult = st.number_input("Stop Loss ATR Multiplier", min_value=0.5, value=2.0, step=0.5, key=f"multi_sl_atr_{i}")
-                    target_atr_mult = st.number_input("Target ATR Multiplier", min_value=0.5, value=5.0, step=0.5, key=f"multi_target_atr_{i}")
-                    hist_data = get_historical_data(instrument_token)
-                    if hist_data is not None:
-                        df = pd.DataFrame(hist_data)
-                        df['ATR'] = calculate_atr(df, atr_period)
-                        atr = df['ATR'].iloc[-1] if not df['ATR'].empty else 0
-                    else:
-                        atr = 0
-                if st.button("Calculate", key=f"multi_calc_{i}"):
-                    if entry_price == 0:
-                        st.error("No live price available")
-                    else:
-                        risk_amount = capital * (risk_per_trade / 100)
-                        if stop_loss_type == "Fixed Amount":
-                            if transaction_type == "BUY":
-                                stop_loss_price = entry_price - stop_loss_value
-                                target_price = entry_price + target_value
-                            else:
-                                stop_loss_price = entry_price + stop_loss_value
-                                target_price = entry_price - target_value
-                            quantity = int(risk_amount / stop_loss_value)
-                        elif stop_loss_type == "Percentage of Entry":
-                            if transaction_type == "BUY":
-                                stop_loss_price = entry_price * (1 - stop_loss_percent / 100)
-                                target_price = entry_price * (1 + target_percent / 100)
-                            else:
-                                stop_loss_price = entry_price * (1 + stop_loss_percent / 100)
-                                target_price = entry_price * (1 - target_percent / 100)
-                            quantity = int(risk_amount / (entry_price * (stop_loss_percent / 100)))
-                        else:
-                            if transaction_type == "BUY":
-                                stop_loss_price = entry_price - (atr * stop_loss_atr_mult)
-                                target_price = entry_price + (atr * target_atr_mult)
-                            else:
-                                stop_loss_price = entry_price + (atr * stop_loss_atr_mult)
-                                target_price = entry_price - (atr * target_atr_mult)
-                            quantity = int(risk_amount / (atr * stop_loss_atr_mult)) if atr > 0 else 0
-                        quantity = max(1, quantity)
-                        trade_value = entry_price * quantity
-                        entry_brokerage = calculate_brokerage(
-                            upstox_apis["charges"], instrument_token, quantity,
-                            entry_price, transaction_type, product_type
-                        )
-                        if product_type in ['I', 'MIS']:
-                            exit_brokerage = calculate_brokerage(
-                                upstox_apis["charges"], instrument_token, quantity,
-                                target_price if transaction_type == "BUY" else stop_loss_price,
-                                "SELL" if transaction_type == "BUY" else "BUY", product_type
-                            )
-                            total_brokerage = entry_brokerage + exit_brokerage
-                            entry_charges = trade_value * 0.001
-                            exit_charges = (target_price if transaction_type == "BUY" else stop_loss_price) * quantity * 0.001
-                            total_charges = entry_charges + exit_charges
-                            st.write(f"**Brokerage (Both Legs):** Rs. {total_brokerage:.2f}")
-                            st.write(f"**Other Charges (Both Legs):** Rs. {total_charges:.2f}")
-                            total_cost = trade_value + total_brokerage + total_charges
-                        else:
-                            total_brokerage = entry_brokerage
-                            total_charges = trade_value * 0.001
-                            st.write(f"**Brokerage (Entry):** Rs. {total_brokerage:.2f}")
-                            st.write(f"**Other Charges (Entry):** Rs. {total_charges:.2f}")
-                            total_cost = trade_value + total_brokerage + total_charges
-                        st.write(f"**Quantity:** {quantity}")
-                        st.write(f"**Stop Loss Price:** Rs. {stop_loss_price:.2f}")
-                        st.write(f"**Target Price:** Rs. {target_price:.2f}")
-                        st.write(f"**Total Cost:** Rs. {total_cost:.2f}")
-                        if "calc_result" not in st.session_state:
-                            st.session_state["calc_result"] = {}
-                        st.session_state["calc_result"][stock_symbol] = {
-                            "quantity": quantity,
-                            "stop_loss": stop_loss_price,
-                            "target": target_price,
-                            "entry_price": entry_price,
-                            "transaction_type": transaction_type
-                        }
+    num_orders = funds_cols[2].number_input("Number of Orders", min_value=1, max_value=10, value=1, step=1)
+    orders = []
+    for i in range(num_orders):
+        st.markdown(f":rainbow[Order {i + 1}]")
+        multi_order_cols = st.columns(9)
+        stock_symbol = multi_order_cols[0].selectbox("Select Symbol", options=instruments.keys(), key=f"multi_order_{i}")
+        instrument_token = instruments.get(stock_symbol)
+        with st.expander("Calculate Position Size", expanded=False):
+            capital = st.number_input("Total Capital (Rs.)", min_value=1000, value=50000, step=1000, key=f"multi_capital_{i}")
+            risk_per_trade = st.number_input("Risk per Trade (%)", min_value=0.1, value=1.0, step=0.1, key=f"multi_risk_{i}")
+            product_type = st.selectbox("Product Type", ['I', 'D'] if broker == "Upstox" else ['MIS', 'CNC'], key=f"multi_product_calc_{i}")
+            if product_type in ['I', 'MIS']:
+                transaction_type = st.radio("Transaction Type", ["BUY", "SELL"], horizontal=True, key=f"multi_trans_calc_{i}")
+            else:
+                transaction_type = "BUY"
+            stop_loss_type = st.selectbox("Stop Loss Type", ["Fixed Amount", "Percentage of Entry", "ATR Based"], key=f"multi_sl_type_{i}")
             live_data = get_market_quote(upstox_apis['market_data'], instrument_token)
-            try:
-                st.markdown(f":rainbow[Last Traded Price] - {live_data.get('ltp', 0)}")
-            except:
-                st.markdown(f":rainbow[Last Traded Price] - N/A")
-            order_types_upstox = ["MARKET", "LIMIT", "SL", "SL-M"]
-            zerodha_order_types = order_types_upstox + ["COVER"]
-            order_types = zerodha_order_types if broker == "Zerodha" else order_types_upstox
-            calc_result = st.session_state.get("calc_result", {}).get(stock_symbol, {})
-            quantity = multi_order_cols[1].number_input(f"Quantity {i + 1}", min_value=1,
-                                                        value=calc_result.get("quantity", 1), key=f"multi_qty_{i}")
-            order_type = multi_order_cols[2].selectbox(f"Order Type {i + 1}", order_types, key=f"multi_order_type_{i}")
-            transaction_type = multi_order_cols[3].radio(
-                f"Transaction Type {i + 1}", ["BUY", "SELL"], key=f"multi_trans_{i}", horizontal=True,
-                index=0 if calc_result.get("transaction_type") == 'BUY' else 1)
-            product_type = multi_order_cols[4].radio(
-                "Product Type", ['I', 'D'] if broker == "Upstox" else ['MIS', 'CNC'],
-                horizontal=True, key=f"multi_prod_type_{i}")
-            amo_order = multi_order_cols[5].checkbox("AMO Order", key=f"multi_amo_{i}")
-
-            schedule_order = multi_order_cols[8].checkbox("Schedule", key=f"multi_schedule_short_{i}")
-            if order_type == "LIMIT":
-                price = multi_order_cols[6].number_input(
-                    f"Limit Price {i + 1}", min_value=0.0, value=0.0, key=f"multi_price_{i}")
-                trigger_price = 0
-            elif order_type == "SL":
-                price = multi_order_cols[6].number_input(
-                    f"Limit Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_price_sl_{i}")
-                trigger_price = multi_order_cols[7].number_input(
-                    f"Trigger Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_trigger_{i}")
-            elif order_type == "SL-M":
-                price = 0
-                trigger_price = multi_order_cols[6].number_input(
-                    f"Stoploss Trigger {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_trigger_slm_{i}")
-            elif order_type == "COVER":
-                price = multi_order_cols[6].number_input(
-                    f"Limit Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_price_cover_{i}")
-                trigger_price = multi_order_cols[7].number_input(
-                    f"Trigger Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_trigger_cover_{i}")
+            entry_price = live_data.get('ltp', 0) if live_data else 0
+            if stop_loss_type == "Fixed Amount":
+                stop_loss_value = st.number_input("Stop Loss Value (Rs.)", min_value=1.0, value=100.0, step=1.0, key=f"multi_sl_fixed_{i}")
+                target_value = st.number_input("Target Value (Rs.)", min_value=1.0, value=250.0, step=1.0, key=f"multi_target_fixed_{i}")
+            elif stop_loss_type == "Percentage of Entry":
+                stop_loss_percent = st.number_input("Stop Loss (%)", min_value=0.1, value=1.0, step=0.1, key=f"multi_sl_pct_{i}")
+                target_percent = st.number_input("Target (%)", min_value=0.1, value=2.5, step=0.1, key=f"multi_target_pct_{i}")
             else:
-                price, trigger_price = 0, 0
-
-            stop_loss = multi_order_cols[6].number_input(
-                f"Stop-Loss {i + 1}", min_value=0.0, value=calc_result.get("stop_loss", 0.0), key=f"multi_sl_{i}")
-            target = multi_order_cols[7].number_input(
-                f"Target {i + 1}", min_value=0.0, value=calc_result.get("target", 0.0), key=f"multi_target_{i}")
-
-            if schedule_order:
-                schedule_cols = st.columns(4)
-                schedule_time = schedule_cols[0].time_input(
-                    f"Schedule Time {i + 1}", value=date_time(9, 15), step=60, key=f"multi_time_{i}")
-                schedule_date = schedule_cols[1].date_input(
-                    f"Schedule Date {i + 1}", value=datetime.now(), min_value=datetime.now(), key=f"multi_date_{i}")
-                schedule_datetime = datetime.combine(schedule_date, schedule_time)
-            else:
-                schedule_datetime = None
-            order_data = {
-                "order_id": f"multi_scheduled_{i}_{uuid.uuid4().hex.upper()[0:6]}",
-                "instrument_token": instrument_token,
-                "quantity": quantity,
-                "product": product_type,
-                "validity": "DAY",
-                "price": price,
-                "tag": f"MultiOrder_{i + 1}",
-                "order_type": order_type,
-                "transaction_type": transaction_type,
-                "disclosed_quantity": 0,
-                "trigger_price": trigger_price,
-                "is_amo": amo_order,
-                "correlation_id": f"order_{i}",
-                "slice": True,
-                "schedule_datetime": schedule_datetime + timedelta(seconds=1) if schedule_datetime else schedule_datetime,
-                "stop_loss": stop_loss,
-                "target": target,
-                "strategy": "short_sell_open" if schedule_order else None,
-                "broker": broker
-            }
-            orders.append(order_data)
-        if st.button("Place Order(s)"):
-            with st.spinner("Placing order(s)..."):
-                for order in orders:
-                    if order["schedule_datetime"] and order["schedule_datetime"] > datetime.now():
-                        scheduled_order_data = pd.DataFrame([{
-                            "ScheduledOrderID": order["order_id"],
-                            "Broker": order["broker"],
-                            "InstrumentToken": order["instrument_token"],
-                            "TransactionType": order["transaction_type"],
-                            "Quantity": order["quantity"],
-                            "OrderType": order["order_type"],
-                            "Price": order["price"],
-                            "TriggerPrice": order["trigger_price"],
-                            "ProductType": order["product"],
-                            "ScheduleDateTime": order["schedule_datetime"],
-                            "StopLoss": order["stop_loss"],
-                            "Target": order["target"]
-                        }])
-                        load_sql_data(
-                            scheduled_order_data, "ScheduledOrders", load_type="append",
-                            index_required=False, database=DATABASE)
-                        run_async(st.session_state["order_manager"]._execute_scheduled_order(order))
-                        st.write(f"Order {order['tag']} scheduled for {order['schedule_datetime']}")
-                    else:
-                        api = upstox_apis["order"] if broker == "Upstox" else kite_apis["kite"]
-                        result = run_async(place_order(
-                            api, order["instrument_token"], order["transaction_type"],
-                            order["quantity"], order["price"], order["order_type"],
-                            order["trigger_price"], order["is_amo"], order["product"],
-                            order["validity"], order["stop_loss"], order["target"], broker=broker
-                        ))
-                        if result:
-                            order_id = result.data.order_id if broker == "Upstox" else result
-                            st.success(f"Order {order['tag']} placed: Order ID {order_id}")
-
-    with tabs[1]:
-        if broker == "Zerodha":
-            trading_symbol = st.selectbox("Select Symbol", options=instruments.keys(),
-                                          key=f"gtt_order_symbol")
-            instrument_token = instruments.get(trading_symbol)
-            last_price = get_market_quote(upstox_apis['market_data'], instrument_token).get('ltp', 0)
-            try:
-                st.markdown(f":rainbow[Last Traded Price] - {last_price}")
-            except:
-                st.markdown(f":rainbow[Last Traded Price] - N/A")
-            with st.form("gtt_order_form"):
-                transaction_type = st.selectbox("Transaction Type", ["BUY", "SELL"])
-                quantity = st.number_input("Quantity", min_value=1, step=1)
-                trigger_type = st.selectbox("Trigger Type", ["single", "two-leg"])
-
-                trigger_price = st.number_input("Trigger Price (Stop-Loss for OCO)",
-                                                min_value=0.0, step=0.05)
-                limit_price = st.number_input("Limit Price", min_value=0.0, step=0.05)
-
-                second_trigger_price = None
-                second_limit_price = None
-                if trigger_type == "two-leg":
-                    second_trigger_price = st.number_input("Target Trigger Price",
-                                                           min_value=0.0, step=0.05)
-                    second_limit_price = st.number_input("Target Limit Price",
-                                                         min_value=0.0, step=0.05)
-
-                submit = st.form_submit_button("Place GTT Order")
-                if submit:
-                    if not trading_symbol or not instrument_token:
-                        st.error("Please provide valid trading symbol and instrument token.")
-                    else:
-                        result = run_async(st.session_state["order_manager"].place_gtt_order(
-                            kite_apis["kite"],
-                            instrument_token,
-                            trading_symbol,
-                            transaction_type,
-                            quantity,
-                            trigger_type,
-                            trigger_price,
-                            limit_price,
-                            last_price,
-                            second_trigger_price,
-                            second_limit_price,
-                            broker
-                        ))
-                        if result.get("status") == "success":
-                            st.success(f"GTT order placed successfully. ID: {result.get('gtt_id')}")
-                        else:
-                            st.error(f"Failed to place GTT order: {result.get('message')}")
-
-            # Display active GTT orders
-            st.subheader("Active GTT Orders")
-            query = text("""
-                SELECT GTTOrderID, TradingSymbol, TransactionType, Quantity, 
-                       TriggerType, TriggerPrice, LimitPrice, 
-                       SecondTriggerPrice, SecondLimitPrice, Status, Broker 
-                FROM NSEDATA.dbo.GTTOrders 
-                WHERE Status = 'active'
-            """)
-            try:
-                with engine.connect() as conn:
-                    gtt_orders = pd.read_sql(query, conn)
-                if not gtt_orders.empty:
-                    st.dataframe(gtt_orders)
+                atr_period = st.number_input("ATR Period", min_value=5, value=14, step=1, key=f"multi_atr_period_{i}")
+                stop_loss_atr_mult = st.number_input("Stop Loss ATR Multiplier", min_value=0.5, value=2.0, step=0.5, key=f"multi_sl_atr_{i}")
+                target_atr_mult = st.number_input("Target ATR Multiplier", min_value=0.5, value=5.0, step=0.5, key=f"multi_target_atr_{i}")
+                hist_data = get_historical_data(instrument_token)
+                if hist_data is not None:
+                    df = pd.DataFrame(hist_data)
+                    df['ATR'] = calculate_atr(df, atr_period)
+                    atr = df['ATR'].iloc[-1] if not df['ATR'].empty else 0
                 else:
-                    st.info("No active GTT orders.")
-            except Exception as e:
-                st.error(f"Error fetching GTT orders: {str(e)}")
+                    atr = 0
+            if st.button("Calculate", key=f"multi_calc_{i}"):
+                if entry_price == 0:
+                    st.error("No live price available")
+                else:
+                    risk_amount = capital * (risk_per_trade / 100)
+                    if stop_loss_type == "Fixed Amount":
+                        if transaction_type == "BUY":
+                            stop_loss_price = entry_price - stop_loss_value
+                            target_price = entry_price + target_value
+                        else:
+                            stop_loss_price = entry_price + stop_loss_value
+                            target_price = entry_price - target_value
+                        quantity = int(risk_amount / stop_loss_value)
+                    elif stop_loss_type == "Percentage of Entry":
+                        if transaction_type == "BUY":
+                            stop_loss_price = entry_price * (1 - stop_loss_percent / 100)
+                            target_price = entry_price * (1 + target_percent / 100)
+                        else:
+                            stop_loss_price = entry_price * (1 + stop_loss_percent / 100)
+                            target_price = entry_price * (1 - target_percent / 100)
+                        quantity = int(risk_amount / (entry_price * (stop_loss_percent / 100)))
+                    else:
+                        if transaction_type == "BUY":
+                            stop_loss_price = entry_price - (atr * stop_loss_atr_mult)
+                            target_price = entry_price + (atr * target_atr_mult)
+                        else:
+                            stop_loss_price = entry_price + (atr * stop_loss_atr_mult)
+                            target_price = entry_price - (atr * target_atr_mult)
+                        quantity = int(risk_amount / (atr * stop_loss_atr_mult)) if atr > 0 else 0
+                    quantity = max(1, quantity)
+                    trade_value = entry_price * quantity
+                    entry_brokerage = calculate_brokerage(
+                        upstox_apis["charges"], instrument_token, quantity,
+                        entry_price, transaction_type, product_type
+                    )
+                    if product_type in ['I', 'MIS']:
+                        exit_brokerage = calculate_brokerage(
+                            upstox_apis["charges"], instrument_token, quantity,
+                            target_price if transaction_type == "BUY" else stop_loss_price,
+                            "SELL" if transaction_type == "BUY" else "BUY", product_type
+                        )
+                        total_brokerage = entry_brokerage + exit_brokerage
+                        entry_charges = trade_value * 0.001
+                        exit_charges = (target_price if transaction_type == "BUY" else stop_loss_price) * quantity * 0.001
+                        total_charges = entry_charges + exit_charges
+                        st.write(f"**Brokerage (Both Legs):** Rs. {total_brokerage:.2f}")
+                        st.write(f"**Other Charges (Both Legs):** Rs. {total_charges:.2f}")
+                        total_cost = trade_value + total_brokerage + total_charges
+                    else:
+                        total_brokerage = entry_brokerage
+                        total_charges = trade_value * 0.001
+                        st.write(f"**Brokerage (Entry):** Rs. {total_brokerage:.2f}")
+                        st.write(f"**Other Charges (Entry):** Rs. {total_charges:.2f}")
+                        total_cost = trade_value + total_brokerage + total_charges
+                    st.write(f"**Quantity:** {quantity}")
+                    st.write(f"**Stop Loss Price:** Rs. {stop_loss_price:.2f}")
+                    st.write(f"**Target Price:** Rs. {target_price:.2f}")
+                    st.write(f"**Total Cost:** Rs. {total_cost:.2f}")
+                    if "calc_result" not in st.session_state:
+                        st.session_state["calc_result"] = {}
+                    st.session_state["calc_result"][stock_symbol] = {
+                        "quantity": quantity,
+                        "stop_loss": stop_loss_price,
+                        "target": target_price,
+                        "entry_price": entry_price,
+                        "transaction_type": transaction_type
+                    }
+        live_data = get_market_quote(upstox_apis['market_data'], instrument_token)
+        try:
+            st.markdown(f":rainbow[Last Traded Price] - {live_data.get('ltp', 0)}")
+        except:
+            st.markdown(f":rainbow[Last Traded Price] - N/A")
+        order_types_upstox = ["MARKET", "LIMIT", "SL", "SL-M"]
+        zerodha_order_types = order_types_upstox + ["COVER"]
+        order_types = zerodha_order_types if broker == "Zerodha" else order_types_upstox
+        calc_result = st.session_state.get("calc_result", {}).get(stock_symbol, {})
+        quantity = multi_order_cols[1].number_input(f"Quantity {i + 1}", min_value=1,
+                                                    value=calc_result.get("quantity", 1), key=f"multi_qty_{i}")
+        order_type = multi_order_cols[2].selectbox(f"Order Type {i + 1}", order_types, key=f"multi_order_type_{i}")
+        transaction_type = multi_order_cols[3].radio(
+            f"Transaction Type {i + 1}", ["BUY", "SELL"], key=f"multi_trans_{i}", horizontal=True,
+            index=0 if calc_result.get("transaction_type") == 'BUY' else 1)
+        product_type = multi_order_cols[4].radio(
+            "Product Type", ['I', 'D'] if broker == "Upstox" else ['MIS', 'CNC'],
+            horizontal=True, key=f"multi_prod_type_{i}")
+        amo_order = multi_order_cols[5].checkbox("AMO Order", key=f"multi_amo_{i}")
+
+        schedule_order = multi_order_cols[8].checkbox("Schedule", key=f"multi_schedule_short_{i}")
+        if order_type == "LIMIT":
+            price = multi_order_cols[6].number_input(
+                f"Limit Price {i + 1}", min_value=0.0, value=0.0, key=f"multi_price_{i}")
+            trigger_price = 0
+        elif order_type == "SL":
+            price = multi_order_cols[6].number_input(
+                f"Limit Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_price_sl_{i}")
+            trigger_price = multi_order_cols[7].number_input(
+                f"Trigger Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_trigger_{i}")
+        elif order_type == "SL-M":
+            price = 0
+            trigger_price = multi_order_cols[6].number_input(
+                f"Stoploss Trigger {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_trigger_slm_{i}")
+        elif order_type == "COVER":
+            price = multi_order_cols[6].number_input(
+                f"Limit Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_price_cover_{i}")
+            trigger_price = multi_order_cols[7].number_input(
+                f"Trigger Price {i + 1}", min_value=0.0, value=live_data.get('ltp', 0), key=f"multi_trigger_cover_{i}")
         else:
-            st.info("GTT orders are only supported for Zerodha")
+            price, trigger_price = 0, 0
+
+        stop_loss = multi_order_cols[6].number_input(
+            f"Stop-Loss {i + 1}", min_value=0.0, value=calc_result.get("stop_loss", 0.0), key=f"multi_sl_{i}")
+        target = multi_order_cols[7].number_input(
+            f"Target {i + 1}", min_value=0.0, value=calc_result.get("target", 0.0), key=f"multi_target_{i}")
+
+        if schedule_order:
+            schedule_cols = st.columns(4)
+            schedule_time = schedule_cols[0].time_input(
+                f"Schedule Time {i + 1}", value=date_time(9, 15), step=60, key=f"multi_time_{i}")
+            schedule_date = schedule_cols[1].date_input(
+                f"Schedule Date {i + 1}", value=datetime.now(), min_value=datetime.now(), key=f"multi_date_{i}")
+            schedule_datetime = datetime.combine(schedule_date, schedule_time)
+        else:
+            schedule_datetime = None
+        order_data = {
+            "order_id": f"multi_scheduled_{i}_{uuid.uuid4().hex.upper()[0:6]}",
+            "instrument_token": instrument_token,
+            "quantity": quantity,
+            "product": product_type,
+            "validity": "DAY",
+            "price": price,
+            "tag": f"MultiOrder_{i + 1}",
+            "order_type": order_type,
+            "transaction_type": transaction_type,
+            "disclosed_quantity": 0,
+            "trigger_price": trigger_price,
+            "is_amo": amo_order,
+            "correlation_id": f"order_{i}",
+            "slice": True,
+            "schedule_datetime": schedule_datetime + timedelta(seconds=1) if schedule_datetime else schedule_datetime,
+            "stop_loss": stop_loss,
+            "target": target,
+            "strategy": "short_sell_open" if schedule_order else None,
+            "broker": broker
+        }
+        orders.append(order_data)
+    if st.button("Place Order(s)"):
+        with st.spinner("Placing order(s)..."):
+            for order in orders:
+                if order["schedule_datetime"] and order["schedule_datetime"] > datetime.now():
+                    scheduled_order_data = pd.DataFrame([{
+                        "ScheduledOrderID": order["order_id"],
+                        "Broker": order["broker"],
+                        "InstrumentToken": order["instrument_token"],
+                        "TransactionType": order["transaction_type"],
+                        "Quantity": order["quantity"],
+                        "OrderType": order["order_type"],
+                        "Price": order["price"],
+                        "TriggerPrice": order["trigger_price"],
+                        "ProductType": order["product"],
+                        "ScheduleDateTime": order["schedule_datetime"],
+                        "StopLoss": order["stop_loss"],
+                        "Target": order["target"]
+                    }])
+                    load_sql_data(scheduled_order_data, "ScheduledOrders", load_type="append", index_required=False, database=DATABASE)
+                    st.session_state["order_manager"]._execute_scheduled_order(order)
+                    st.write(f"Order {order['tag']} scheduled for {order['schedule_datetime']}")
+                else:
+                    api = upstox_apis["order"] if broker == "Upstox" else kite_apis["kite"]
+                    result = place_order(
+                        api, order["instrument_token"], order["transaction_type"],
+                        order["quantity"], order["price"], order["order_type"],
+                        order["trigger_price"], order["is_amo"], order["product"],
+                        order["validity"], order["stop_loss"], order["target"], broker=broker
+                    )
+                    if result:
+                        order_id = result.data.order_id if broker == "Upstox" else result
+                        st.success(f"Order {order['tag']} placed: Order ID {order_id}")
 
 elif page == "Order Book":
     st.subheader("Order Book")
-    tabs = st.tabs(["Orders", "Scheduled Orders", "Auto Orders", "GTT Orders"])
+    tabs = st.tabs(["Orders", "Scheduled Orders", "Auto Orders", "Threads"])
     db_orders = get_table_data(selected_database=DATABASE, selected_table="Orders")
     with tabs[0]:
         orders_df = get_order_book(upstox_apis["order"], kite_apis['kite'])
@@ -1866,7 +1457,7 @@ elif page == "Order Book":
         st.subheader(f"Order Management - {st.session_state['select_broker']}")
         order_manager = st.session_state["order_manager"]
         st.write("##### Scheduled Orders")
-        scheduled_orders = order_manager.scheduled_order_queue
+        scheduled_orders = order_manager.scheduled_order_queue.queue
         if scheduled_orders:
             scheduled_df = pd.DataFrame([order for _, order in scheduled_orders])
             st.dataframe(scheduled_df)
@@ -2081,44 +1672,8 @@ elif page == "Order Book":
                     st.write(result)
 
     with tabs[3]:
-        if broker == "Zerodha":
-            st.subheader("GTT Orders")
-            gtt_df = get_gtt_orders(kite_apis["kite"])
-            if not gtt_df.empty:
-                st.dataframe(gtt_df)
-                selected_gtt_id = st.selectbox("Select GTT Order to Modify/Delete", options=gtt_df["GTT ID"])
-                if selected_gtt_id:
-                    gtt_order = kite_apis["kite"].get_gtt(selected_gtt_id)
-                    st.json(gtt_order)
-                    new_gtt_quantity = st.number_input("New Quantity", min_value=1,
-                                                       value=int(gtt_order["orders"][0]["quantity"]),
-                                                       key='new_gtt_quantity')
-                    new_gtt_trigger = st.number_input("New Trigger Price", min_value=0.05,
-                                                      value=float(gtt_order["condition"]["trigger_values"][0]), step=0.05,
-                                                      key="new_gtt_trigger")
-                    new_gtt_limit = st.number_input("New Limit Price", min_value=0.05,
-                                                    value=float(gtt_order["orders"][0]["price"]), step=0.05,
-                                                    key="")
-                    col_mod, col_del = st.columns(2)
-                    with col_mod:
-                        if st.button("Modify GTT Order"):
-                            result = run_async(st.session_state["order_manager"].modify_gtt_order(
-                                selected_gtt_id, gtt_order["condition"]["tradingsymbol"],
-                                gtt_order["orders"][0]["transaction_type"], new_gtt_quantity, gtt_order["type"],
-                                new_gtt_trigger,  new_gtt_limit, gtt_order["condition"]["last_price"],
-                                second_trigger_price=None, second_limit_price=None
-                            ))
-                            if result:
-                                st.success(f"GTT order {selected_gtt_id} modified")
-                    with col_del:
-                        if st.button("Delete GTT Order"):
-                            result = run_async(st.session_state["order_manager"].delete_gtt_order(selected_gtt_id))
-                            if result:
-                                st.success(f"GTT order {selected_gtt_id} deleted")
-            else:
-                st.info("No GTT orders found")
-        else:
-            st.info("GTT orders are only supported for Zerodha")
+        st.subheader("Running Threads")
+        st.session_state["thread_manager"].get_running_threads()
 
 elif page == "Positions":
     st.subheader("Current Positions")
@@ -2292,6 +1847,341 @@ elif page == "Portfolio":
         mf_cols[2].metric("Total Mutual Funds P&L", f"₹{total_mf_pnl:.2f}", f"{(total_mf_pnl / total_mf_buy_value * 100):.2f}%")
     else:
         st.info("No mutual funds found")
+
+elif page == "Analytics":
+    st.write("Trade Analytics & Live Feed")
+    analytics_cols = st.columns(5)
+    stock_symbol = analytics_cols[0].selectbox("Select Symbol", options=instruments.keys(), key='symbol_analysis')
+    instrument_token = instruments.get(stock_symbol)
+    timeframe = analytics_cols[1].selectbox("Timeframe", ["1minute", "day", "week", "month", "30minute"], index=1)
+    ema_period = analytics_cols[2].number_input("EMA Period", min_value=5, value=20, max_value=200)
+    lr_period = analytics_cols[3].number_input("LR Period", min_value=5, value=20, max_value=200)
+    rsi_period = analytics_cols[4].number_input("RSI Period", min_value=5, value=14, max_value=50)
+    show_columns = st.columns(5)
+    show_sr = show_columns[0].checkbox("Show Support & Resistance")
+    show_trend = show_columns[1].checkbox("Show Trend Lines")
+    show_ema = show_columns[2].checkbox("Show EMA")
+    show_lr = show_columns[3].checkbox("Show Linear Regression")
+    show_rsi = show_columns[4].checkbox("Show RSI")
+    timeframe_mapping = {
+        "1minute": "minutes",
+        "day": "days",
+        "week": "weeks",
+        "month": "months",
+        "30minute": "minutes"
+    }
+    api_timeframe = timeframe_mapping.get(timeframe, "minutes")
+    data = get_historical_data(instrument_token, api_timeframe)
+    if data is not None:
+        chart = StreamlitChart(height=600, toolbox=True, scale_candles_only=True)
+        chart_data = data.rename(columns={"timestamp": "time", "open": "open", "high": "high", "low": "low", "close": "close"})
+        chart_data.sort_values(by='time', inplace=True)
+        chart.set(chart_data)
+        chart.legend(True, color_based_on_candle=True, font_size=22, font_family='sans-serif')
+        chart.watermark(stock_symbol)
+        if show_sr:
+            support = data["low"].min()
+            resistance = data["high"].max()
+            chart.horizontal_line(support, color="green", style='dashed', text="Support")
+            chart.horizontal_line(resistance, color="red", style='dashed', text="Resistance")
+        if show_trend:
+            trend_start = {"time": data["timestamp"].iloc[0], "value": data["close"].iloc[0]}
+            trend_end = {"time": data["timestamp"].iloc[60], "value": data["close"].iloc[60]}
+            chart.trend_line(trend_start['time'], trend_start['value'], trend_end['time'], trend_end['value'], line_color="blue")
+        if show_ema:
+            ema = calculate_ema(data, ema_period)
+            latest_ema = ema.iloc[-1]
+            chart.marker(data["timestamp"].iloc[-1], color="orange", text="EMA")
+            st.write(f"Latest EMA ({ema_period}): {latest_ema:.2f}")
+        if show_lr:
+            lr = calculate_linear_regression(data, lr_period)
+            latest_lr = lr.iloc[-1]
+            chart.marker(data["timestamp"].iloc[-1], color="purple", text='LR')
+            st.write(f"Latest Linear Regression ({lr_period}): {latest_lr:.2f}")
+        if show_rsi:
+            rsi = calculate_rsi(data, rsi_period)
+            rsi_data = pd.DataFrame({"time": data["timestamp"], "rsi": rsi}).dropna()
+            rsi_line = chart.create_line(name="RSI", color="blue")
+            rsi_line.set(rsi_data)
+            latest_rsi = rsi.iloc[-1]
+            st.write(f"Latest RSI ({rsi_period}): {latest_rsi:.2f}")
+        chart.load()
+
+elif page == "Algo Trading":
+    st.subheader("Algorithmic Trading")
+    col1, col2 = st.columns(2)
+    with col1:
+        strategy = st.selectbox("Select Strategy", ["MACD Crossover", "Bollinger Bands", "RSI Oversold/Overbought", "Stochastic Oscillator", "Support/Resistance Breakout"])
+        stock_symbol = st.selectbox("Select Symbol", options=instruments.keys(), key='symbol_algo')
+        instrument_token = instruments.get(stock_symbol)
+        quantity = st.number_input("Quantity", min_value=1, value=1)
+        if strategy == "MACD Crossover":
+            fast_period = st.number_input("Fast EMA Period", min_value=3, value=12)
+            slow_period = st.number_input("Slow EMA Period", min_value=5, value=26)
+            signal_period = st.number_input("Signal Period", min_value=3, value=9)
+        elif strategy == "Bollinger Bands":
+            bb_period = st.number_input("Bollinger Band Period", min_value=5, value=20)
+            num_std = st.number_input("Number of Standard Deviations", min_value=1.0, value=2.0)
+        elif strategy == "RSI Oversold/Overbought":
+            rsi_period = st.number_input("RSI Period", min_value=5, value=14)
+            overbought = st.number_input("Overbought Level", min_value=50, max_value=100, value=70)
+            oversold = st.number_input("Oversold Level", min_value=0, max_value=50, value=30)
+        elif strategy == "Stochastic Oscillator":
+            k_period = st.number_input("K Period", min_value=5, value=14)
+            d_period = st.number_input("D Period", min_value=3, value=3)
+        elif strategy == "Support/Resistance Breakout":
+            lookback = st.number_input("Lookback Period", min_value=5, value=20)
+    with col2:
+        st.subheader("Risk Management")
+        stop_loss = st.number_input("Stop Loss (%)", min_value=0.1, value=1.0, max_value=10.0)
+        take_profit = st.number_input("Take Profit (%)", min_value=0.1, value=2.0, max_value=20.0)
+        st.subheader("Execution Settings")
+        execution_type = st.radio("Execution Type", ["Manual", "Automatic"])
+        if execution_type == "Automatic":
+            interval = st.number_input("Check Interval (minutes)", min_value=1, value=5)
+            start_hour = st.number_input("Market Start Hour", min_value=0, max_value=23, value=9)
+            start_min = st.number_input("Market Start Minute", min_value=0, max_value=59, value=15)
+            end_hour = st.number_input("Market End Hour", min_value=0, max_value=23, value=15)
+            end_min = st.number_input("Market End Minute", min_value=0, max_value=59, value=30)
+    st.subheader("Strategy Description")
+    if strategy == "MACD Crossover":
+        st.markdown("""**MACD Crossover Strategy**...""")  # Truncated for brevity
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Check Current Signal"):
+            with st.spinner("Analyzing market data..."):
+                hist_data = get_historical_data(instrument_token)
+                if hist_data is not None:
+                    signal = None
+                    if strategy == "MACD Crossover":
+                        macd_line, signal_line, _ = calculate_macd(hist_data, fast_period, slow_period, signal_period)
+                        signal = check_macd_crossover(macd_line, signal_line)
+                    elif strategy == "Bollinger Bands":
+                        _, upper_band, lower_band = calculate_bollinger_bands(hist_data, bb_period, num_std)
+                        signal = check_bollinger_band_signals(hist_data, upper_band, lower_band)
+                    elif strategy == "RSI Oversold/Overbought":
+                        rsi = calculate_rsi(hist_data, rsi_period)
+                        if rsi.iloc[-1] < oversold:
+                            signal = "BUY"
+                        elif rsi.iloc[-1] > overbought:
+                            signal = "SELL"
+                    elif strategy == "Stochastic Oscillator":
+                        k, d = calculate_stochastic_oscillator(hist_data, k_period, d_period)
+                        signal = check_stochastic_signals(k, d)
+                    elif strategy == "Support/Resistance Breakout":
+                        signal = check_support_resistance_breakout(hist_data, lookback)
+                    if signal:
+                        st.success(f"Current Signal: {signal}")
+                    else:
+                        st.info("No signal detected at the current time.")
+                else:
+                    st.error("Failed to fetch historical data.")
+    with col2:
+        if execution_type == "Manual":
+            if st.button("Execute Strategy Now"):
+                with st.spinner("Executing strategy..."):
+                    result = auto_trade(upstox_apis["order"], strategy, instrument_token, quantity, stop_loss, take_profit)
+                    st.success(result)
+        else:
+            if st.button("Start Automated Trading"):
+                run_hours = [(start_hour, end_hour)]
+                result = schedule_strategy_execution(upstox_apis["order"], strategy, instrument_token, quantity, interval, run_hours)
+                st.success(f"Automated trading started. Checking every {interval} minutes during market hours.")
+                st.warning("Warning: Automated trading continues until the app is closed or you navigate away.")
+
+elif page == "Strategy Backtest":
+    st.subheader("Strategy Backtesting")
+    stock_symbol = st.selectbox("Select Symbol", options=instruments.keys(), key='symbol_backtest')
+    instrument_token = instruments.get(stock_symbol)
+    timeframe = st.selectbox("Timeframe", ["day", "week", "1minute", "5minute", "30minute"], index=0)
+    strategy = st.selectbox("Select Strategy to Backtest",
+                            ["Short Sell Optimization", "MACD Crossover", "Bollinger Bands", "RSI Strategy"])
+
+    if strategy == "Short Sell Optimization":
+        st.write("Backtest and optimize a short-selling strategy using ATR-based stop-loss and target.")
+        stocks = ['GOLDBEES', 'JUNIORBEES', 'ICICIB22', 'CPSEETF', 'ITBEES', 'MID150BEES', 'MON100', 'MAFANG',
+                  'HDFCSML250']
+        selected_stocks = st.multiselect("Select Stocks to Backtest", stocks, default=stocks[:2])
+        initial_investment = st.number_input("Initial Investment (Rs.)", min_value=1000, value=50000, step=1000)
+        stop_loss_atr_mult_range = st.slider("Stop Loss ATR Multiplier", 1.0, 4.0, (1.5, 2.5), step=0.5)
+        target_atr_mult_range = st.slider("Target ATR Multiplier", 1.0, 7.0, (4.0, 6.0), step=0.5)
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Start Date", value=pd.to_datetime("2020-01-01"))
+        with col2:
+            end_date = st.date_input("End Date", value=pd.to_datetime("2026-01-01"))
+    elif strategy == "MACD Crossover":
+        fast_period = st.number_input("Fast EMA Period", min_value=3, value=12)
+        slow_period = st.number_input("Slow EMA Period", min_value=5, value=26)
+        signal_period = st.number_input("Signal Period", min_value=3, value=9)
+        strategy_params = {"fast_period": fast_period, "slow_period": slow_period, "signal_period": signal_period}
+        strategy_func = macd_strategy
+    elif strategy == "Bollinger Bands":
+        bb_period = st.number_input("Bollinger Band Period", min_value=5, value=20)
+        num_std = st.number_input("Number of Standard Deviations", min_value=1.0, value=2.0)
+        strategy_params = {"period": bb_period, "num_std": num_std}
+        strategy_func = bollinger_band_strategy
+    elif strategy == "RSI Strategy":
+        rsi_period = st.number_input("RSI Period", min_value=5, value=14)
+        overbought = st.number_input("Overbought Level", min_value=50, max_value=100, value=70)
+        oversold = st.number_input("Oversold Level", min_value=0, max_value=50, value=30)
+        strategy_params = {"period": rsi_period, "overbought": overbought, "oversold": oversold}
+        strategy_func = rsi_strategy
+
+    if st.button("Run Backtest"):
+        with st.spinner("Running backtest..."):
+            if strategy == 'Short Sell Optimization':
+                stop_loss_atr_mult_values = [x for x in
+                                             np.arange(stop_loss_atr_mult_range[0], stop_loss_atr_mult_range[1] + 0.5,
+                                                       0.5)]
+                target_atr_mult_values = [x for x in
+                                          np.arange(target_atr_mult_range[0], target_atr_mult_range[1] + 0.5, 0.5)]
+                initial_investment_range = [initial_investment]
+                optimized_results = {}
+                date_lists = {}
+                for stock in selected_stocks:
+                    query = f"Select * from dbo.{stock} where date between '{start_date} 00:00:00.000' and '{end_date} 00:00:00.000' order by Date ASC"
+                    data = get_table_data(query=query)
+                    if not data.empty:
+                        df = pd.DataFrame(data)
+                        date_lists[stock] = df['Date']
+                        optimized_results[stock] = backtest_etf.optimize_parameters(data, stock,
+                                                                                    initial_investment_range,
+                                                                                    stop_loss_atr_mult_values,
+                                                                                    target_atr_mult_values)
+                    else:
+                        st.error(f"No data found for {stock}")
+                if optimized_results:
+                    for stock, result in optimized_results.items():
+                        st.write(f"##### Optimized Results for {stock}")
+                        st.write(f"**Initial Investment:** Rs. {result['Initial Investment']}")
+                        st.write(f"**Stop Loss ATR Multiplier:** {result['stop_loss_atr_mult']:.1f}x")
+                        st.write(f"**Target ATR Multiplier:** {result['target_atr_mult']:.1f}x")
+                        st.write(f"**Final Portfolio Value:** Rs. {result['Final Portfolio Value']:.2f}")
+                        st.write(f"**Total Profit:** Rs. {result['Total Profit']:.2f}")
+                        st.write(f"**Win Rate:** {result['Win Rate']:.2f}%")
+                        st.write(f"**Loss Rate:** {result['Loss Rate']:.2f}%")
+                        st.write(f"**Total Trades:** {result['Total Trades']}")
+                        st.write(f"**Winning Trades:** {result['Winning Trades']}")
+                        st.write(f"**Losing Trades:** {result['Losing Trades']}")
+                        st.write("##### Yearly Summary")
+                        st.dataframe(result['Yearly Summary'])
+                    st.write("##### Portfolio Value Over Time")
+                    chart_data = pd.DataFrame()
+                    for stock, result in optimized_results.items():
+                        dates = date_lists[stock]
+                        portfolio_values = result['Portfolio Value']
+                        df = pd.DataFrame(
+                            {'Date': dates, 'Portfolio Value': portfolio_values, 'Stock': [stock] * len(dates)})
+                        chart_data = pd.concat([chart_data, df], ignore_index=True)
+                    if not chart_data.empty:
+                        chart = alt.Chart(chart_data).mark_line().encode(
+                            x='Date:T',
+                            y='Portfolio Value:Q',
+                            color='Stock:N',
+                            tooltip=['Date:T', 'Portfolio Value:Q', 'Stock:N']
+                        ).properties(
+                            width=800,
+                            height=400,
+                            title='Portfolio Value Over Time (ATR-Based Optimization)'
+                        ).interactive()
+                        st.altair_chart(chart, use_container_width=True)
+                    for stock, result in optimized_results.items():
+                        csv = result['Tradebook'].to_csv(index=False)
+                        st.download_button(
+                            label=f"Download Tradebook for {stock}",
+                            data=csv,
+                            file_name=f"{stock}_tradebook.csv",
+                            mime="text/csv"
+                        )
+                    st.dataframe(result['Tradebook'])
+                else:
+                    st.warning("No results to display. Check data availability.")
+            else:
+                hist_data = get_historical_data(instrument_token, timeframe)
+                if hist_data is not None:
+                    backtest_results = backtest_strategy(hist_data, strategy_func, **strategy_params)
+                    st.subheader("Backtest Results")
+                    total_trades = backtest_results['signal'].value_counts().sum()
+                    profitable_trades = len(backtest_results[backtest_results['pnl'] > 0])
+                    win_rate = profitable_trades / total_trades * 100 if total_trades > 0 else 0
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Total Trades", total_trades)
+                    col2.metric("Win Rate", f"{win_rate:.2f}%")
+                    col3.metric("Total P&L", f"₹{backtest_results['cumulative_pnl'].iloc[-1]:.2f}")
+
+                    st.subheader("Performance Chart")
+                    chart_data = pd.DataFrame({
+                        'Date': backtest_results['timestamp'],
+                        'Close Price': backtest_results['close'],
+                        'Cumulative P&L': backtest_results['cumulative_pnl']
+                    })
+                    buy_signals = backtest_results[backtest_results['signal'] == 'BUY']
+                    sell_signals = backtest_results[backtest_results['signal'] == 'SELL']
+
+                    # Price Chart with Buy/Sell Signals
+                    price_chart = alt.Chart(chart_data).mark_line().encode(
+                        x='Date:T',
+                        y=alt.Y('Close Price:Q', scale=alt.Scale(zero=False)),
+                        color=alt.value('#336699'),
+                        tooltip=['Date:T', 'Close Price:Q']
+                    ).properties(
+                        width=800,
+                        height=300,
+                        title=f'{strategy} - Price and Signals'
+                    )
+
+                    buy_points = alt.Chart(buy_signals).mark_point(
+                        color='green',
+                        size=100,
+                        shape='triangle-up'
+                    ).encode(
+                        x='timestamp:T',
+                        y='close:Q'
+                    )
+
+                    sell_points = alt.Chart(sell_signals).mark_point(
+                        color='red',
+                        size=100,
+                        shape='triangle-down'
+                    ).encode(
+                        x='timestamp:T',
+                        y='close:Q'
+                    )
+
+                    # Cumulative P&L Chart
+                    pnl_chart = alt.Chart(chart_data).mark_line().encode(
+                        x='Date:T',
+                        y=alt.Y('Cumulative P&L:Q', scale=alt.Scale(zero=False)),
+                        color=alt.value('#4CAF50'),
+                        tooltip=['Date:T', 'Cumulative P&L:Q']
+                    ).properties(
+                        width=800,
+                        height=200,
+                        title='Cumulative Profit & Loss'
+                    )
+
+                    # Combine charts
+                    combined_chart = alt.layer(price_chart, buy_points, sell_points) & pnl_chart
+                    st.altair_chart(combined_chart, use_container_width=True)
+
+                    # Trade Log
+                    st.subheader("Trade Log")
+                    trade_log = backtest_results[['timestamp', 'close', 'signal', 'pnl', 'cumulative_pnl']].dropna(
+                        subset=['signal'])
+                    trade_log.columns = ['Date', 'Price', 'Signal', 'P&L', 'Cumulative P&L']
+                    st.dataframe(trade_log)
+
+                    # Download results
+                    csv = backtest_results.to_csv(index=False)
+                    st.download_button(
+                        label="Download Backtest Results",
+                        data=csv,
+                        file_name=f"{stock_symbol}_{strategy}_backtest.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.error("Failed to fetch historical data.")
 
 if enable_debug:
     st.json(st.session_state)

@@ -289,17 +289,17 @@ def strategy_tester():
         st.header("📊 Strategy Results")
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Investment (Dynamic)", f"${dynamic_portfolio['total_investment']:,.2f}")
+            st.metric("Total Investment (Dynamic)", f"₹{dynamic_portfolio['total_investment']:,.2f}")
         with col2:
-            st.metric("Final Portfolio Value (Dynamic)", f"${dynamic_portfolio['portfolio_value']:,.2f}")
+            st.metric("Final Portfolio Value (Dynamic)", f"₹{dynamic_portfolio['portfolio_value']:,.2f}")
         with col3:
             st.metric("Strategy CAGR (Dynamic)", f"{dynamic_portfolio['cagr'] * 100:.2f}%")
 
         col4, col5, col6 = st.columns(3)
         with col4:
-            st.metric("Total Investment (Fixed)", f"${fixed_portfolio['total_investment']:,.2f}")
+            st.metric("Total Investment (Fixed)", f"₹{fixed_portfolio['total_investment']:,.2f}")
         with col5:
-            st.metric("Final Portfolio Value (Fixed)", f"${fixed_portfolio['portfolio_value']:,.2f}")
+            st.metric("Final Portfolio Value (Fixed)", f"₹{fixed_portfolio['portfolio_value']:,.2f}")
         with col6:
             st.metric("Strategy CAGR (Fixed)", f"{fixed_portfolio['cagr'] * 100:.2f}%")
 

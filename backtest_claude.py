@@ -9,9 +9,29 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas_ta as ta
 import itertools
+import logging
 import warnings
 from common_utils import read_write_sql_data as rd
 warnings.filterwarnings("ignore")
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+st.set_page_config(
+    layout="wide",
+    page_title="📈 Advanced Trading Strategy Backtester",
+    page_icon="📈",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown("""
+    <style>
+    .sidebar .sidebar-content { background-color: #ffffff; }
+    .streamlit-expanderHeader { background-color: #ffffff; border-radius: 5px; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    </style>
+    """, unsafe_allow_html=True)
 
 
 def fetch_stock_data(stock_symbol, start_dt, end_dt):
@@ -85,8 +105,8 @@ class EMACrossover(Strategy):
         df = pd.DataFrame(self.data.df)
 
         # Calculate indicators using pandas_ta
-        df['EMA1'] = ta.ema(df['Close'], length=self.n1)
-        df['EMA2'] = ta.ema(df['Close'], length=self.n2)
+        df['EMA1'] = df['Close'].ewm(span=self.n1, adjust=False).mean()
+        df['EMA2'] = df['Close'].ewm(span=self.n2, adjust=False).mean()
         df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
 
         # Register the indicators with Backtesting.py
@@ -258,7 +278,7 @@ if run_backtest:
                 }
 
                 # Run backtest
-                bt = Backtest(data, strategy, cash=100000, commission=.002)
+                bt = Backtest(data, strategy, cash=100000, commission=.002, trade_on_close=True)
                 stats = bt.run(**params)
 
                 # Display metrics in a more organized way

@@ -21,3 +21,9 @@ def insert_commas(num):
                 result = "," + result
         result = digit + result
     return result
+
+
+def format_currency(value):
+    if isinstance(value, (int, float)):
+        return f"₹{value:,.2f}"
+    return value

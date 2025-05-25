@@ -10,12 +10,11 @@ from python_scripts.stocks_data_load.daily_data_load import Dataload  # Assuming
 import time
 import seaborn as sns
 import matplotlib.pyplot as plt
-import websocket
-import json
 from dotenv import load_dotenv
 import os
 import threading
 import upstox_client
+import statsmodels.api as sm
 
 # Load environment variables (for Upstox integration)
 load_dotenv()
@@ -99,6 +98,19 @@ def calculate_monthly_returns(data):
     return data.pivot_table(index='Year', columns='Month', values='Monthly Return')
 
 
+def slope(ser, n):
+    x = np.array(range(len(ser)))
+    slopes = [0] * (n - 1)
+    reg_prices = [0] * (n - 1)
+    for i in range(n, len(ser) + 1):
+        y_scaled = ser[i - n:i]
+        x_scaled = sm.add_constant(x[i - n:i])
+        model = sm.OLS(y_scaled, x_scaled)
+        results = model.fit()
+        slopes.append(results.params[-1])
+        reg_prices.append(model.predict(results.params)[-1])
+    return reg_prices
+
 def calculate_stock_technical_summary(stock_df, indicators):
     for indicator, instances in indicators.items():
         for params in instances:
@@ -122,8 +134,7 @@ def calculate_stock_technical_summary(stock_df, indicators):
                 stock_df[col_name] = ta.rsi(stock_df["Close"], length=params['period'])
             elif indicator == 'LINREG':
                 col_name = f'LINREG_{params["period"]}'
-                stock_df[col_name] = ta.linreg(stock_df["Close"], length=params[
-                    'period'])  # No need for .rename() as we use the col_name directly
+                stock_df[col_name] = slope(stock_df["Close"], n=params['period'])
     return stock_df
 
 
@@ -312,7 +323,7 @@ apply_patterns = pattern_col.checkbox("Apply Patterns")
 header_col.subheader(f":rainbow[{stock_name}]")
 
 num_subcharts = len([ind for ind in st.session_state.indicators if ind in ['RSI', 'MACD']])
-total_height = 500 + (num_subcharts * 100)
+total_height = 700 + (num_subcharts * 100)
 chart_placeholder = st.empty()
 
 
@@ -584,10 +595,10 @@ if show_summary or show_heatmap or show_analysis or show_data:
                         st.markdown("- **Bullish RSI Divergence**: Lower price, higher RSI")
 
             st.subheader("Position Sizing")
-            account_size = st.number_input("Account Size (₹)", value=100000.0, min_value=1000.0)
-            risk_percent = st.slider("Risk % per Trade", 0.1, 5.0, 1.0)
-            entry_price = st.number_input("Entry Price", value=df["Close"].iloc[-1])
-            stop_loss = st.number_input("Stop Loss", value=df["Close"].iloc[-1] * 0.95)
+            account_size = st.number_input("Account Size (₹)", value=20000.0, min_value=1000.0)
+            risk_percent = st.slider("Risk % per Trade", 0.1, 5.0, 2.0)
+            entry_price = st.number_input("Entry Price", value=df["Close"].iloc[-1]*.995)
+            stop_loss = st.number_input("Stop Loss", value=df["Close"].iloc[-1] * 0.98)
             if st.button("Calculate Position Size"):
                 atr = ta.atr(df["High"], df["Low"], df["Close"], length=14).iloc[-1]
                 risk_amount = account_size * (risk_percent / 100)

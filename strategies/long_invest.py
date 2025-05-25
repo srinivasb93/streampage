@@ -66,7 +66,7 @@ def backtest_strategy(index_data, etf_data, window, down_percent, fixed_investme
     index_data = generate_signals(index_data, down_percent)
 
     # Limit buy signals to a maximum of 2 per month
-    index_data = limit_signals_per_month(index_data, max_signals_per_month=2)
+    index_data = limit_signals_per_month(index_data, max_signals_per_month=5)
 
     # Merge index signals with ETF data
     merged_data = pd.merge(index_data[['Date', 'signal']], etf_data, on='Date', how='left')
@@ -139,7 +139,7 @@ def find_best_strategy(index_data, etf_data, window_range, down_percent_range, f
 def main():
     # Example parameters
     start_date = '2020-01-01'
-    end_date = '2023-01-01'
+    end_date = '2025-03-01'
     fixed_investment = 5000  # Fixed amount to invest on each buy signal
 
     # Define ranges for window and down_percent

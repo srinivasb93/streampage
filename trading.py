@@ -63,7 +63,6 @@ def display_interactive_dataframe(df):
     # df.Symbol = df.Symbol.map(lambda x: f'<a href="{x}" target="_blank">{x.split("=")[-1]}</a>')
     # st.write(df.to_html(escape=False, index=False, index_names=False), unsafe_allow_html=True)
 
-    print(df.head())
     st.dataframe(df.style
                  .format({
                         'Close': '{:.2f}',
@@ -99,7 +98,6 @@ def display_interactive_dataframe(df):
 
                     selected_row['Reason'] = reason
                     selected_row['Date_Added'] = dt.datetime.now()
-                    print(selected_row)
 
                     # Submit button
                     if st.form_submit_button("Add to Watchlist"):

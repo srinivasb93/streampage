@@ -16,7 +16,7 @@ from lightweight_charts.widgets import StreamlitChart
 import numpy as np
 import logging
 import certifi
-from common_utils import read_write_sql_data as rd
+from common_utils import *
 from websocket_manager import initialize_websocket, subscribe_to_instrument, get_live_data, is_connected, get_subscribed_instruments
 
 
@@ -26,8 +26,8 @@ ACCESS_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN")
 SANDBOX_ACCESS_TOKEN = os.getenv("SANDBOX_ACCESS_TOKEN")
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-API_KEY = os.getenv("API_KEY")
-API_SECRET = os.getenv("API_SECRET")
+API_KEY = os.getenv("UPSTOX_API_KEY")
+API_SECRET = os.getenv("UPSTOX_API_SECRET")
 
 st.set_page_config(page_title="Upstox Trading Dashboard", layout="wide")
 # Custom CSS for UI Enhancement
@@ -189,33 +189,6 @@ def fetch_instruments():
         return instruments_dict
     except ApiException as e:
         logger.error(f"Exception when fetching instruments data: {e}")
-        return None
-
-
-def get_market_quote(api, instrument_tokens, mode="full"):
-    """Get market quotes for instruments"""
-    try:
-        if not isinstance(instrument_tokens, list):
-            instrument_tokens = [instrument_tokens]
-        if mode == "full":
-            api_response = api.get_full_market_quote(instrument_tokens, api_version="v2")
-        else:
-            api_response = api.get_market_quote_ohlc(instrument_tokens, api_version="v2")
-
-        latest_data = {}
-        for key, data in api_response.items():
-            latest_data = data
-        return {
-            "symbol": latest_data.symbol,
-            "ltp": latest_data.last_price,
-            "open": latest_data.ohlc.open,
-            "high": latest_data.ohlc.high,
-            "low": latest_data.ohlc.low,
-            "close": latest_data.ohlc.close,  # Previous close
-            "volume": latest_data.volume  # Market depth
-        }
-    except ApiException as e:
-        logger.error(f"Exception when calling MarketQuoteApi->get_quotes: {e}")
         return None
 
 
@@ -679,7 +652,8 @@ elif page == "Order Management":
                 selected_symbol = st.session_state.get("selected_symbol", None)
                 if selected_symbol:
                     instrument_token = instruments.get(selected_symbol)
-                    live_data = get_live_data(instrument_token)
+                    live_data = get_market_quote(apis['market_data'], instrument_token)
+                    print(live_data)
                     with ltp_placeholder.container():
                         st.metric("Last Traded Price", f"₹{live_data.get('ltp', 0):.2f}")
                     if "depth" in live_data and live_data["depth"]:
@@ -696,7 +670,7 @@ elif page == "Order Management":
             amo_order = other_order_cols[2].checkbox("AMO Order")
 
             order_type_cols = st.columns(3)
-            live_data = get_live_data()
+            live_data = get_market_quote(apis['market_data'], instrument_token)
 
             ltp = live_data.get("ltp", 0)
             if order_type == "LIMIT":
@@ -838,7 +812,7 @@ elif page == "Order Management":
 
     current_time = time.time()
     if current_time - st.session_state["last_update"] >= 1:
-        live_data = get_live_data()
+        live_data = get_market_quote(apis['market_data'], instrument_token)
         with ltp_placeholder.container():
             st.metric("Last Traded Price", f"₹{live_data.get('ltp', 0):.2f}")
         if "depth" in live_data and live_data["depth"]:

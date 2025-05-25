@@ -96,7 +96,8 @@ class EODAnalysis:
         if self.analysis_days >= 200:
             data['EMA_60'] = round(data['Close'].ewm(span=60, min_periods=60).mean(), 2)
             data['EMA_200'] = round(data['Close'].ewm(span=200).mean(), 2)
-        data['Reg_6'] = round(ta.linreg(data['Close'], length=6), 2)
+        data['Reg_6'] = self.slope(data['Close'], n=6)
+        data['Reg_6'] = round(data['Reg_6'], 2)
         data['Reg_18'] = round(ta.linreg(data['Close'], length=18), 2)
         data['Reg_6_Chg'] = round(data['Reg_6'] - data['Reg_6'].shift(), 1)
         data['Reg_Cross'] = round(data['Reg_6'] - data['Reg_18'], 1)
@@ -199,8 +200,8 @@ class EODAnalysis:
 
     @staticmethod
     def analyze_support(data, k, curr_support, prev_support, curr_res, prev_res, poc_bl):
-        supp_cond = (data.loc[k, 'Reg_6_Chg'] > 0 >= data.loc[k - 1, 'Reg_6_Chg'] >=
-                     data.loc[k - 2, 'Reg_6_Chg'] >= data.loc[k - 3, 'Reg_6_Chg'])
+        supp_cond = (data.loc[k, 'Reg_6'] > data.loc[k - 1, 'Reg_6']) and (
+                data.loc[k - 1, 'Reg_6'] < data.loc[k - 2, 'Reg_6'] < data.loc[k - 3, 'Reg_6'] < data.loc[k - 4, 'Reg_6'])
         if supp_cond:
             prev_support = curr_support
             curr_support = data.loc[k - 1, 'Reg_6']
@@ -211,7 +212,7 @@ class EODAnalysis:
             if prev_support < curr_support < data.loc[k, 'Low'] and curr_res > prev_res:
                 data.loc[k, 'Support'] = 'Price_Abv_Supp'
                 poc_bl += 1
-            if prev_support < data.loc[k, 'Low'] < curr_support and curr_res > prev_res:
+            if prev_support < curr_support and data.loc[k, 'Low'] < curr_support and curr_res > prev_res:
                 data.loc[k, 'Support'] = 'Price_Crs_Abv_Supp'
                 poc_bl += 1
             elif curr_support > prev_support and curr_res < prev_res and data.loc[k, 'Close'] > curr_res:
@@ -234,7 +235,8 @@ class EODAnalysis:
 
     @staticmethod
     def analyze_resistance(data, k, curr_res, prev_res, curr_support, prev_support, poc_br):
-        res_cond = (data.loc[k, 'Reg_6_Chg'] < 0 <= data.loc[k - 1, 'Reg_6_Chg'] <= data.loc[k - 2, 'Reg_6_Chg'])
+        res_cond = (data.loc[k, 'Reg_6'] < data.loc[k - 1, 'Reg_6']) and (
+                data.loc[k - 1, 'Reg_6'] > data.loc[k - 2, 'Reg_6'] > data.loc[k - 3, 'Reg_6'] > data.loc[k - 4, 'Reg_6'])
         if res_cond:
             prev_res = curr_res
             curr_res = data.loc[k - 1, 'Reg_6']
@@ -245,7 +247,7 @@ class EODAnalysis:
             if prev_res > curr_res > data.loc[k, 'High'] and curr_support < prev_support:
                 data.loc[k, 'Resistance'] = 'Price_Blw_Res'
                 poc_br += 1
-            if prev_res > curr_res > data.loc[k, 'Close'] and data.loc[k, 'High'] > curr_res < data.loc[k - 1, 'Close']:
+            if prev_res > curr_res and prev_res > data.loc[k, 'Close'] and data.loc[k, 'High'] > curr_res < data.loc[k - 1, 'Close']:
                 data.loc[k, 'Resistance'] = 'Price_Crs_Blw_Res'
                 poc_br += 1
             elif curr_res < prev_res and prev_support > curr_support > data.loc[k, 'High'] <= data.loc[k - 1, 'Close']:

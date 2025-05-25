@@ -276,4 +276,4 @@ def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
 
 if __name__ == '__main__':
     """ Call required methods in this module for data load """
-    equity_daily_data_load(for_date=datetime.date(2024,12,26), adhoc_date=True)
+    equity_daily_data_load(for_date=datetime.date(2025,3,25), adhoc_date=True)

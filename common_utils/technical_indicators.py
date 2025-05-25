@@ -78,7 +78,7 @@ def average_true_range(df, n):
     return df
 
 
-def bollinger_bands(df, n):
+def bollinger_bands(df, n, num_std=2):
     """
 
     :param df: pandas.DataFrame

@@ -2,12 +2,16 @@ import openpyxl
 import streamlit as st
 import datetime as dt
 import pandas as pd
+import threading
+import schedule
+import time
 from common_utils import read_write_sql_data as rd, run_python_script as rps
 from python_scripts.stocks_data_load import daily_data_load as eq_daily_load, load_agg_data as ag
 from python_scripts.mf_data_load import mf_hist_data_load as mf_hist_load
 from python_scripts.stocks_data_load.utilities import update_portfolio
 from python_scripts.get_market_data.market_data import load_index_and_stocks_data
 from python_scripts.analysis.EOD_analysis import EODAnalysis
+# from python_scripts.analysis.EOD_analysis_grok import StockAnalyzer, ReportGenerator
 
 
 def display_toaster(status, msg, custom_icon=':material/info_i:', use_default_icon=True):
@@ -44,7 +48,13 @@ def perform_data_load(data_type='Equity', load_freq='Daily', **kwargs):
                                    analysis_days=kwargs.get('analysis_days', 365))
 
         load_status = eod_analysis.run_analysis()
+        # eod_analysis = StockAnalyzer(stocks_list=stocks_indices_sectors,
+        #                              adhoc_date=kwargs.get('date', dt.date.today()),
+        #                              analysis_days=kwargs.get('analysis_days', 365))
+        #
+        # load_status = eod_analysis.analyze()
         print(load_status)
+        # analysis_report = ReportGenerator()
         eod_analysis.print_summary_data_analysis()
     elif data_type == 'MF' and load_freq == 'Historical':
         load_status = mf_hist_load.extract_and_load_latest_mf_hist_data()
@@ -92,11 +102,67 @@ def fetch_stocks_data(data_type='Daily', equity_type='Stocks', bhav_copy=False,
     return stocks_data
 
 
+# Scheduler function
+def run_scheduled_tasks():
+    while True:
+        schedule.run_pending()
+        time.sleep(60)  # Check every minute
+
+
+def schedule_data_loads():
+    # Schedule daily equity data load at 19:00
+    schedule.every().day.at("19:00").do(lambda: perform_data_load(
+        data_type='Equity',
+        load_freq='Daily'
+    ))
+
+    # Schedule EOD Analysis at 19:15
+    schedule.every().day.at("19:00").do(lambda: perform_data_load(
+        data_type='Equity',
+        load_freq='Daily'
+    ))
+
+    # Schedule portfolio update at 1:30 AM
+    schedule.every().day.at("01:30").do(lambda: update_portfolio.update_overall_portfolio_summary(
+        fetch_type='load_and_fetch',
+        for_date=dt.date.today(),
+        mf_snap_reload=False,
+        bhavcopy_reload=False
+    ))
+
+    # Add more schedules as needed
+    # schedule.every().day.at("02:00").do(...)
+
 # Main Streamlit app
 def dataload():
-    load_or_view = st.sidebar.radio("Choose option", options=['Load', 'View'], horizontal=True)
+    # Start scheduler in background thread
+    scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
+    scheduler_thread.start()
 
-    if load_or_view == 'View':
+    load_or_view = st.sidebar.radio("Choose option", options=['Load', 'View', 'Schedule'], horizontal=True)
+
+    if load_or_view == 'Schedule':
+        st.subheader('Schedule Data Loads')
+
+        st.write("Current Scheduled Tasks:")
+        st.write("- Equity Daily Data Load: 1:00 AM")
+        st.write("- Portfolio Update: 1:30 AM")
+
+        if st.sidebar.button("Schedule Data Loads"):
+            schedule_data_loads()
+
+        if st.button("Run Scheduled Tasks Now"):
+            with st.spinner("Running scheduled tasks..."):
+                perform_data_load(data_type='Equity', load_freq='Daily')
+                update_portfolio.update_overall_portfolio_summary(
+                    fetch_type='load_and_fetch',
+                    for_date=dt.date.today(),
+                    mf_snap_reload=False,
+                    bhavcopy_reload=False
+                )
+                st.success("Scheduled tasks completed!")
+
+    elif load_or_view == 'View':
         stock_or_events = st.sidebar.selectbox('Choose data to view',
                                                     ['Stocks', 'Indices', 'Events'])
 
@@ -120,7 +186,7 @@ def dataload():
         elif stock_or_events == 'Events':
             st.dataframe(fetch_stocks_data(equity_type=stock_or_events, fetch_count=True), hide_index=True)
 
-    if load_or_view == 'Load':
+    elif load_or_view == 'Load':
         st.subheader('Equity and Mutual Fund Data Loader')
 
         col1, upload_col = st.columns([2, 1], vertical_alignment="top", gap="medium")

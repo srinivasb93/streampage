@@ -2293,5 +2293,340 @@ elif page == "Portfolio":
     else:
         st.info("No mutual funds found")
 
+elif page == "Analytics":
+    st.write("Trade Analytics & Live Feed")
+    analytics_cols = st.columns(5)
+    stock_symbol = analytics_cols[0].selectbox("Select Symbol", options=instruments.keys(), key='symbol_analysis')
+    instrument_token = instruments.get(stock_symbol)
+    timeframe = analytics_cols[1].selectbox("Timeframe", ["1minute", "day", "week", "month", "30minute"], index=1)
+    ema_period = analytics_cols[2].number_input("EMA Period", min_value=5, value=20, max_value=200)
+    lr_period = analytics_cols[3].number_input("LR Period", min_value=5, value=20, max_value=200)
+    rsi_period = analytics_cols[4].number_input("RSI Period", min_value=5, value=14, max_value=50)
+    show_columns = st.columns(5)
+    show_sr = show_columns[0].checkbox("Show Support & Resistance")
+    show_trend = show_columns[1].checkbox("Show Trend Lines")
+    show_ema = show_columns[2].checkbox("Show EMA")
+    show_lr = show_columns[3].checkbox("Show Linear Regression")
+    show_rsi = show_columns[4].checkbox("Show RSI")
+    timeframe_mapping = {
+        "1minute": "minutes",
+        "day": "days",
+        "week": "weeks",
+        "month": "months",
+        "30minute": "minutes"
+    }
+    api_timeframe = timeframe_mapping.get(timeframe, "minutes")
+    data = get_historical_data(instrument_token, api_timeframe)
+    if data is not None:
+        chart = StreamlitChart(height=600, toolbox=True, scale_candles_only=True)
+        chart_data = data.rename(columns={"timestamp": "time", "open": "open", "high": "high", "low": "low", "close": "close"})
+        chart_data.sort_values(by='time', inplace=True)
+        chart.set(chart_data)
+        chart.legend(True, color_based_on_candle=True, font_size=22, font_family='sans-serif')
+        chart.watermark(stock_symbol)
+        if show_sr:
+            support = data["low"].min()
+            resistance = data["high"].max()
+            chart.horizontal_line(support, color="green", style='dashed', text="Support")
+            chart.horizontal_line(resistance, color="red", style='dashed', text="Resistance")
+        if show_trend:
+            trend_start = {"time": data["timestamp"].iloc[0], "value": data["close"].iloc[0]}
+            trend_end = {"time": data["timestamp"].iloc[60], "value": data["close"].iloc[60]}
+            chart.trend_line(trend_start['time'], trend_start['value'], trend_end['time'], trend_end['value'], line_color="blue")
+        if show_ema:
+            ema = calculate_ema(data, ema_period)
+            latest_ema = ema.iloc[-1]
+            chart.marker(data["timestamp"].iloc[-1], color="orange", text="EMA")
+            st.write(f"Latest EMA ({ema_period}): {latest_ema:.2f}")
+        if show_lr:
+            lr = calculate_linear_regression(data, lr_period)
+            latest_lr = lr.iloc[-1]
+            chart.marker(data["timestamp"].iloc[-1], color="purple", text='LR')
+            st.write(f"Latest Linear Regression ({lr_period}): {latest_lr:.2f}")
+        if show_rsi:
+            rsi = calculate_rsi(data, rsi_period)
+            rsi_data = pd.DataFrame({"time": data["timestamp"], "rsi": rsi}).dropna()
+            rsi_line = chart.create_line(name="RSI", color="blue")
+            rsi_line.set(rsi_data)
+            latest_rsi = rsi.iloc[-1]
+            st.write(f"Latest RSI ({rsi_period}): {latest_rsi:.2f}")
+        chart.load()
+
+elif page == "Algo Trading":
+    st.subheader("Algorithmic Trading")
+    col1, col2 = st.columns(2)
+    with col1:
+        strategy = st.selectbox("Select Strategy", ["MACD Crossover", "Bollinger Bands", "RSI Oversold/Overbought", "Stochastic Oscillator", "Support/Resistance Breakout"])
+        stock_symbol = st.selectbox("Select Symbol", options=instruments.keys(), key='symbol_algo')
+        instrument_token = instruments.get(stock_symbol)
+        quantity = st.number_input("Quantity", min_value=1, value=1)
+        if strategy == "MACD Crossover":
+            fast_period = st.number_input("Fast EMA Period", min_value=3, value=12)
+            slow_period = st.number_input("Slow EMA Period", min_value=5, value=26)
+            signal_period = st.number_input("Signal Period", min_value=3, value=9)
+        elif strategy == "Bollinger Bands":
+            bb_period = st.number_input("Bollinger Band Period", min_value=5, value=20)
+            num_std = st.number_input("Number of Standard Deviations", min_value=1.0, value=2.0)
+        elif strategy == "RSI Oversold/Overbought":
+            rsi_period = st.number_input("RSI Period", min_value=5, value=14)
+            overbought = st.number_input("Overbought Level", min_value=50, max_value=100, value=70)
+            oversold = st.number_input("Oversold Level", min_value=0, max_value=50, value=30)
+        elif strategy == "Stochastic Oscillator":
+            k_period = st.number_input("K Period", min_value=5, value=14)
+            d_period = st.number_input("D Period", min_value=3, value=3)
+        elif strategy == "Support/Resistance Breakout":
+            lookback = st.number_input("Lookback Period", min_value=5, value=20)
+    with col2:
+        st.subheader("Risk Management")
+        stop_loss = st.number_input("Stop Loss (%)", min_value=0.1, value=1.0, max_value=10.0)
+        take_profit = st.number_input("Take Profit (%)", min_value=0.1, value=2.0, max_value=20.0)
+        st.subheader("Execution Settings")
+        execution_type = st.radio("Execution Type", ["Manual", "Automatic"])
+        if execution_type == "Automatic":
+            interval = st.number_input("Check Interval (minutes)", min_value=1, value=5)
+            start_hour = st.number_input("Market Start Hour", min_value=0, max_value=23, value=9)
+            start_min = st.number_input("Market Start Minute", min_value=0, max_value=59, value=15)
+            end_hour = st.number_input("Market End Hour", min_value=0, max_value=23, value=15)
+            end_min = st.number_input("Market End Minute", min_value=0, max_value=59, value=30)
+    st.subheader("Strategy Description")
+    if strategy == "MACD Crossover":
+        st.markdown("""**MACD Crossover Strategy**...""")  # Truncated for brevity
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Check Current Signal"):
+            with st.spinner("Analyzing market data..."):
+                hist_data = get_historical_data(instrument_token)
+                if hist_data is not None:
+                    signal = None
+                    if strategy == "MACD Crossover":
+                        macd_line, signal_line, _ = calculate_macd(hist_data, fast_period, slow_period, signal_period)
+                        signal = check_macd_crossover(macd_line, signal_line)
+                    elif strategy == "Bollinger Bands":
+                        _, upper_band, lower_band = calculate_bollinger_bands(hist_data, bb_period, num_std)
+                        signal = check_bollinger_band_signals(hist_data, upper_band, lower_band)
+                    elif strategy == "RSI Oversold/Overbought":
+                        rsi = calculate_rsi(hist_data, rsi_period)
+                        if rsi.iloc[-1] < oversold:
+                            signal = "BUY"
+                        elif rsi.iloc[-1] > overbought:
+                            signal = "SELL"
+                    elif strategy == "Stochastic Oscillator":
+                        k, d = calculate_stochastic_oscillator(hist_data, k_period, d_period)
+                        signal = check_stochastic_signals(k, d)
+                    elif strategy == "Support/Resistance Breakout":
+                        signal = check_support_resistance_breakout(hist_data, lookback)
+                    if signal:
+                        st.success(f"Current Signal: {signal}")
+                    else:
+                        st.info("No signal detected at the current time.")
+                else:
+                    st.error("Failed to fetch historical data.")
+    with col2:
+        if execution_type == "Manual":
+            if st.button("Execute Strategy Now"):
+                with st.spinner("Executing strategy..."):
+                    result = auto_trade(upstox_apis["order"], strategy, instrument_token, quantity, stop_loss, take_profit)
+                    st.success(result)
+        else:
+            if st.button("Start Automated Trading"):
+                run_hours = [(start_hour, end_hour)]
+                result = schedule_strategy_execution(upstox_apis["order"], strategy, instrument_token, quantity, interval, run_hours)
+                st.success(f"Automated trading started. Checking every {interval} minutes during market hours.")
+                st.warning("Warning: Automated trading continues until the app is closed or you navigate away.")
+
+elif page == "Strategy Backtest":
+    st.subheader("Strategy Backtesting")
+    stock_symbol = st.selectbox("Select Symbol", options=instruments.keys(), key='symbol_backtest')
+    instrument_token = instruments.get(stock_symbol)
+    timeframe = st.selectbox("Timeframe", ["day", "week", "1minute", "5minute", "30minute"], index=0)
+    strategy = st.selectbox("Select Strategy to Backtest",
+                            ["Short Sell Optimization", "MACD Crossover", "Bollinger Bands", "RSI Strategy"])
+
+    if strategy == "Short Sell Optimization":
+        st.write("Backtest and optimize a short-selling strategy using ATR-based stop-loss and target.")
+        stocks = ['GOLDBEES', 'JUNIORBEES', 'ICICIB22', 'CPSEETF', 'ITBEES', 'MID150BEES', 'MON100', 'MAFANG',
+                  'HDFCSML250']
+        selected_stocks = st.multiselect("Select Stocks to Backtest", stocks, default=stocks[:2])
+        initial_investment = st.number_input("Initial Investment (Rs.)", min_value=1000, value=50000, step=1000)
+        stop_loss_atr_mult_range = st.slider("Stop Loss ATR Multiplier", 1.0, 4.0, (1.5, 2.5), step=0.5)
+        target_atr_mult_range = st.slider("Target ATR Multiplier", 1.0, 7.0, (4.0, 6.0), step=0.5)
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Start Date", value=pd.to_datetime("2020-01-01"))
+        with col2:
+            end_date = st.date_input("End Date", value=pd.to_datetime("2026-01-01"))
+    elif strategy == "MACD Crossover":
+        fast_period = st.number_input("Fast EMA Period", min_value=3, value=12)
+        slow_period = st.number_input("Slow EMA Period", min_value=5, value=26)
+        signal_period = st.number_input("Signal Period", min_value=3, value=9)
+        strategy_params = {"fast_period": fast_period, "slow_period": slow_period, "signal_period": signal_period}
+        strategy_func = macd_strategy
+    elif strategy == "Bollinger Bands":
+        bb_period = st.number_input("Bollinger Band Period", min_value=5, value=20)
+        num_std = st.number_input("Number of Standard Deviations", min_value=1.0, value=2.0)
+        strategy_params = {"period": bb_period, "num_std": num_std}
+        strategy_func = bollinger_band_strategy
+    elif strategy == "RSI Strategy":
+        rsi_period = st.number_input("RSI Period", min_value=5, value=14)
+        overbought = st.number_input("Overbought Level", min_value=50, max_value=100, value=70)
+        oversold = st.number_input("Oversold Level", min_value=0, max_value=50, value=30)
+        strategy_params = {"period": rsi_period, "overbought": overbought, "oversold": oversold}
+        strategy_func = rsi_strategy
+
+    if st.button("Run Backtest"):
+        with st.spinner("Running backtest..."):
+            if strategy == 'Short Sell Optimization':
+                stop_loss_atr_mult_values = [x for x in
+                                             np.arange(stop_loss_atr_mult_range[0], stop_loss_atr_mult_range[1] + 0.5,
+                                                       0.5)]
+                target_atr_mult_values = [x for x in
+                                          np.arange(target_atr_mult_range[0], target_atr_mult_range[1] + 0.5, 0.5)]
+                initial_investment_range = [initial_investment]
+                optimized_results = {}
+                date_lists = {}
+                for stock in selected_stocks:
+                    query = f"Select * from dbo.{stock} where date between '{start_date} 00:00:00.000' and '{end_date} 00:00:00.000' order by Date ASC"
+                    data = get_table_data(query=query)
+                    if not data.empty:
+                        df = pd.DataFrame(data)
+                        date_lists[stock] = df['Date']
+                        optimized_results[stock] = backtest_etf.optimize_parameters(data, stock,
+                                                                                    initial_investment_range,
+                                                                                    stop_loss_atr_mult_values,
+                                                                                    target_atr_mult_values)
+                    else:
+                        st.error(f"No data found for {stock}")
+                if optimized_results:
+                    for stock, result in optimized_results.items():
+                        st.write(f"##### Optimized Results for {stock}")
+                        st.write(f"**Initial Investment:** Rs. {result['Initial Investment']}")
+                        st.write(f"**Stop Loss ATR Multiplier:** {result['stop_loss_atr_mult']:.1f}x")
+                        st.write(f"**Target ATR Multiplier:** {result['target_atr_mult']:.1f}x")
+                        st.write(f"**Final Portfolio Value:** Rs. {result['Final Portfolio Value']:.2f}")
+                        st.write(f"**Total Profit:** Rs. {result['Total Profit']:.2f}")
+                        st.write(f"**Win Rate:** {result['Win Rate']:.2f}%")
+                        st.write(f"**Loss Rate:** {result['Loss Rate']:.2f}%")
+                        st.write(f"**Total Trades:** {result['Total Trades']}")
+                        st.write(f"**Winning Trades:** {result['Winning Trades']}")
+                        st.write(f"**Losing Trades:** {result['Losing Trades']}")
+                        st.write("##### Yearly Summary")
+                        st.dataframe(result['Yearly Summary'])
+                    st.write("##### Portfolio Value Over Time")
+                    chart_data = pd.DataFrame()
+                    for stock, result in optimized_results.items():
+                        dates = date_lists[stock]
+                        portfolio_values = result['Portfolio Value']
+                        df = pd.DataFrame(
+                            {'Date': dates, 'Portfolio Value': portfolio_values, 'Stock': [stock] * len(dates)})
+                        chart_data = pd.concat([chart_data, df], ignore_index=True)
+                    if not chart_data.empty:
+                        chart = alt.Chart(chart_data).mark_line().encode(
+                            x='Date:T',
+                            y='Portfolio Value:Q',
+                            color='Stock:N',
+                            tooltip=['Date:T', 'Portfolio Value:Q', 'Stock:N']
+                        ).properties(
+                            width=800,
+                            height=400,
+                            title='Portfolio Value Over Time (ATR-Based Optimization)'
+                        ).interactive()
+                        st.altair_chart(chart, use_container_width=True)
+                    for stock, result in optimized_results.items():
+                        csv = result['Tradebook'].to_csv(index=False)
+                        st.download_button(
+                            label=f"Download Tradebook for {stock}",
+                            data=csv,
+                            file_name=f"{stock}_tradebook.csv",
+                            mime="text/csv"
+                        )
+                    st.dataframe(result['Tradebook'])
+                else:
+                    st.warning("No results to display. Check data availability.")
+            else:
+                hist_data = get_historical_data(instrument_token, timeframe)
+                if hist_data is not None:
+                    backtest_results = backtest_strategy(hist_data, strategy_func, **strategy_params)
+                    st.subheader("Backtest Results")
+                    total_trades = backtest_results['signal'].value_counts().sum()
+                    profitable_trades = len(backtest_results[backtest_results['pnl'] > 0])
+                    win_rate = profitable_trades / total_trades * 100 if total_trades > 0 else 0
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Total Trades", total_trades)
+                    col2.metric("Win Rate", f"{win_rate:.2f}%")
+                    col3.metric("Total P&L", f"₹{backtest_results['cumulative_pnl'].iloc[-1]:.2f}")
+
+                    st.subheader("Performance Chart")
+                    chart_data = pd.DataFrame({
+                        'Date': backtest_results['timestamp'],
+                        'Close Price': backtest_results['close'],
+                        'Cumulative P&L': backtest_results['cumulative_pnl']
+                    })
+                    buy_signals = backtest_results[backtest_results['signal'] == 'BUY']
+                    sell_signals = backtest_results[backtest_results['signal'] == 'SELL']
+
+                    # Price Chart with Buy/Sell Signals
+                    price_chart = alt.Chart(chart_data).mark_line().encode(
+                        x='Date:T',
+                        y=alt.Y('Close Price:Q', scale=alt.Scale(zero=False)),
+                        color=alt.value('#336699'),
+                        tooltip=['Date:T', 'Close Price:Q']
+                    ).properties(
+                        width=800,
+                        height=300,
+                        title=f'{strategy} - Price and Signals'
+                    )
+
+                    buy_points = alt.Chart(buy_signals).mark_point(
+                        color='green',
+                        size=100,
+                        shape='triangle-up'
+                    ).encode(
+                        x='timestamp:T',
+                        y='close:Q'
+                    )
+
+                    sell_points = alt.Chart(sell_signals).mark_point(
+                        color='red',
+                        size=100,
+                        shape='triangle-down'
+                    ).encode(
+                        x='timestamp:T',
+                        y='close:Q'
+                    )
+
+                    # Cumulative P&L Chart
+                    pnl_chart = alt.Chart(chart_data).mark_line().encode(
+                        x='Date:T',
+                        y=alt.Y('Cumulative P&L:Q', scale=alt.Scale(zero=False)),
+                        color=alt.value('#4CAF50'),
+                        tooltip=['Date:T', 'Cumulative P&L:Q']
+                    ).properties(
+                        width=800,
+                        height=200,
+                        title='Cumulative Profit & Loss'
+                    )
+
+                    # Combine charts
+                    combined_chart = alt.layer(price_chart, buy_points, sell_points) & pnl_chart
+                    st.altair_chart(combined_chart, use_container_width=True)
+
+                    # Trade Log
+                    st.subheader("Trade Log")
+                    trade_log = backtest_results[['timestamp', 'close', 'signal', 'pnl', 'cumulative_pnl']].dropna(
+                        subset=['signal'])
+                    trade_log.columns = ['Date', 'Price', 'Signal', 'P&L', 'Cumulative P&L']
+                    st.dataframe(trade_log)
+
+                    # Download results
+                    csv = backtest_results.to_csv(index=False)
+                    st.download_button(
+                        label="Download Backtest Results",
+                        data=csv,
+                        file_name=f"{stock_symbol}_{strategy}_backtest.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.error("Failed to fetch historical data.")
+
 if enable_debug:
     st.json(st.session_state)

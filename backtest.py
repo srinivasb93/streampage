@@ -8,7 +8,7 @@ from common_utils import read_write_sql_data as rd
 
 @st.cache_data
 def extract_stock_data(stock_name, start_date, end_date):
-    query = f'Select * from dbo.{stock_name} order by Date ASC'
+    query = f'Select * from public.{stock_name} order by Date ASC'
     df = rd.get_table_data(query=query)
     df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
     df["Date"] = pd.to_datetime(df["Date"])

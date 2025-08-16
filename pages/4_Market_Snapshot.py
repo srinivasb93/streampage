@@ -1,17 +1,17 @@
 import streamlit as st
 from common_utils import read_write_sql_data as rd
-import pandas as pd
+import numpy as np
 from python_scripts.get_market_data import market_data
-import nsepython as np
+from common_utils.utils import fetch_indicies_sectors_list
 
-
+st.set_page_config(layout="wide")
 md = market_data.MarketData()
 
 
 @st.cache_data
 def fetch_table_data(asset_type='Stocks', table_name=''):
     asset_map = {'Stocks': 'BHAVCOPY', 'Indices': 'BHAVCOPY_INDICES', 'Mutual_Fund': 'LATEST_PREV_NAV_SNAPSHOT'}
-    database = 'ANALYTICS' if asset_type == 'Mutual_Fund' else 'NSEDATA'
+    database = 'analytics' if asset_type == 'Mutual_Fund' else 'nsedata'
     if not table_name:
         asset_snapshot = rd.get_table_data(selected_database=database,
                                            selected_table=asset_map.get(asset_type, 'Stocks'))
@@ -48,12 +48,8 @@ def market_snapshot():
         asset_type = st.sidebar.selectbox("Choose Asset Type", options=["Stocks", "Indices", "Mutual_Fund"])
         radio_btn = st.sidebar.radio(label="Required Data", options=["Prev_Day", "Live"], horizontal=True)
 
-        sectors_df = rd.get_table_data(selected_table="STOCK_SECTORS")
-        indices_df = rd.get_table_data(selected_table="STOCK_INDICES")
-        indices = indices_df['name'].values.tolist()
-        sectors = sectors_df['name'].values.tolist()
-        sectors_list = [sector.replace("_", " ") for sector in sectors]
-        indices_list = [indice.replace("_", " ") for indice in indices]
+        indices_list = fetch_indicies_sectors_list(required="indices")
+        sectors_list = fetch_indicies_sectors_list(required="sectors")
 
         # Fetch data based on asset type selection
         if asset_type == 'Stocks':
@@ -82,7 +78,8 @@ def market_snapshot():
 
             index_val = stock_snapshot.iloc[0]
             index_date = index_val['Last_Updated']
-            index_data = stock_snapshot.iloc[1:, :]
+            index_data = stock_snapshot.iloc[1:, :].copy()
+            index_data = index_data.replace('-', np.nan).ffill()
             display_cols = ['Symbol', 'Close', 'Pct_Chg']
             display_cols_365d = ['Symbol', 'Close', 'Pct_Chg_365d']
             display_cols_30d = ['Symbol', 'Close', 'Pct_Chg_30d']

@@ -8,7 +8,7 @@ connection_string = rd.create_connection()
 # Function to fetch historical stock data from SQL Server
 def fetch_stock_data(symbol, start_date):
     # Replace 'your_connection_string' with your actual SQL Server connection string
-    query = f"SELECT Date, [Close] FROM dbo.{symbol} WHERE Date >= '{start_date}' ORDER BY Date"
+    query = f"SELECT Date, [Close] from public.{symbol} WHERE Date >= '{start_date}' ORDER BY Date"
 
     # Fetch data from SQL Server
     stock_data = pd.read_sql(query, connection_string, parse_dates=['Date'], index_col='Date')
@@ -26,7 +26,7 @@ def calculate_returns(data):
 # Function to fetch benchmark index data
 def fetch_benchmark_data(index_symbol, start_date):
     # Replace 'your_connection_string' with your actual SQL Server connection string
-    query = f"SELECT Date, [Close] FROM dbo.{index_symbol} WHERE Date >= '{start_date}' ORDER BY Date"
+    query = f"SELECT Date, [Close] from public.{index_symbol} WHERE Date >= '{start_date}' ORDER BY Date"
 
     # Fetch data from SQL Server
     index_data = pd.read_sql(query, connection_string, parse_dates=['Date'], index_col='Date')

@@ -15,7 +15,7 @@ def fecth_or_load_equity_holdings(fetch_type='load', for_date=dt.date.today(), b
     :return: equity holdings
     """
     # Fetch equity holdings and bhavcopy data
-    equity_holdings = rd.get_table_data("ANALYTICS", "EQUITY_HOLDINGS")
+    equity_holdings = rd.get_table_data("analytics", "EQUITY_HOLDINGS")
     bhav_copy = bhav.extract_or_load_bhav_copy(for_date=for_date, reload=bhav_reload)
 
     # Fetch equity holdings account wise
@@ -81,17 +81,17 @@ def fecth_or_load_equity_holdings(fetch_type='load', for_date=dt.date.today(), b
     elif 'load' in fetch_type:
         equity_load_msg = rd.load_sql_data(data_to_load=equity_holdings,
                                             table_name="EQUITY_HOLDINGS_ACCOUNT_WISE",
-                                            database='ANALYTICS')
+                                            database='analytics')
         print(equity_load_msg)
 
         con_equity_load_msg = rd.load_sql_data(data_to_load=consolidated_eq_holdings,
                                                 table_name="EQUITY_HOLDINGS_OVERALL",
-                                                database='ANALYTICS')
+                                                database='analytics')
         print(con_equity_load_msg)
 
         equity_summary_load_msg = rd.load_sql_data(data_to_load=eq_holdings_account_wise,
                                                    table_name="EQUITY_SUMMARY_ACCOUNT_WISE",
-                                                   database='ANALYTICS')
+                                                   database='analytics')
         print(equity_summary_load_msg)
 
         if fetch_type == 'load_and_fetch':
@@ -111,7 +111,7 @@ def fecth_or_load_mf_holdings(fetch_type='load', for_date=dt.date.today(), mf_sn
     :return: mutual fund holdings
     """
     # Fetch mutual fund holdings and bhavcopy data
-    mf_holdings = rd.get_table_data("ANALYTICS", "MF_HOLDINGS")
+    mf_holdings = rd.get_table_data("analytics", "MF_HOLDINGS")
     mf_holdings["Scheme_Code"] = mf_holdings["Scheme_Code"].astype(str)
 
     nav_snaphot, _ = mf_snap.load_or_get_latest_prev_nav_snapshot(for_date=for_date, reload=mf_snap_reload)
@@ -179,17 +179,17 @@ def fecth_or_load_mf_holdings(fetch_type='load', for_date=dt.date.today(), mf_sn
     elif 'load' in fetch_type:
         mf_load_msg = rd.load_sql_data(data_to_load=mf_holdings,
                                        table_name="MF_HOLDINGS_ACCOUNT_WISE",
-                                       database='ANALYTICS')
+                                       database='analytics')
         print(mf_load_msg)
 
         con_mf_load_msg = rd.load_sql_data(data_to_load=consolidated_mf_holdings,
                                            table_name="MF_HOLDINGS_OVERALL",
-                                           database='ANALYTICS')
+                                           database='analytics')
         print(con_mf_load_msg)
 
         mf_summary_load_msg = rd.load_sql_data(data_to_load=mf_holdings_account_wise,
                                                table_name="MF_SUMMARY_ACCOUNT_WISE",
-                                               database='ANALYTICS')
+                                               database='analytics')
         print(mf_summary_load_msg)
 
         if fetch_type == 'load_and_fetch':
@@ -233,7 +233,7 @@ def update_overall_portfolio_summary(fetch_type='load_and_fetch',
 
     overall_summary_load_msg = rd.load_sql_data(data_to_load=overall_portfolio_summary,
                                                 table_name="OVERALL_SUMMARY_ACCOUNT_WISE",
-                                                database='ANALYTICS')
+                                                database='analytics')
     print(overall_summary_load_msg)
     return overall_portfolio_summary if fetch_data else "Overall Portfolio Summary updated successfully"
 

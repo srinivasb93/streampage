@@ -11,7 +11,7 @@ import subprocess
 # Example: 'mssql+pyodbc://username:password@your_server/your_database'
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                      "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                     "DATABASE=NSEDATA;"
+                                     "DATABASE=nsedata;"
                                      "Trusted_Connection=yes")
 db_url = "mssql+pyodbc:///?odbc_connect={}".format(params)
 engine = create_engine(db_url)
@@ -115,7 +115,7 @@ app.layout = html.Div([
 )
 def update_charts_and_table(stock_symbol, date_range, x_days, relayout_data):
     # Query stock data from SQL Server database
-    query = f"SELECT Date, [Close], Volume FROM dbo.{stock_symbol} WHERE " \
+    query = f"SELECT Date, [Close], Volume from public.{stock_symbol} WHERE " \
             f"Date >= '{date_range[0]}-01-01' AND Date <= '{date_range[1]}-12-31' ORDER BY Date"
     stock_data = pd.read_sql(query, engine, parse_dates=['Date'])
 

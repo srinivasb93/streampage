@@ -106,9 +106,9 @@ class StockAnalyzer:
         stock_clean = stock.replace('&', '').replace('-', '')
         try:
             if self.analysis_period == 'by_date':
-                query = f"SELECT * FROM dbo.{stock_clean} WHERE DATE BETWEEN '{self.start_date}' AND '{self.end_date}' ORDER BY DATE ASC"
+                query = f"SELECT * from public.{stock_clean} WHERE DATE BETWEEN '{self.start_date}' AND '{self.end_date}' ORDER BY DATE ASC"
             else:
-                query = f"SELECT TOP {self.analysis_days} * FROM dbo.{stock_clean} ORDER BY DATE DESC"
+                query = f"SELECT TOP {self.analysis_days} * from public.{stock_clean} ORDER BY DATE DESC"
             data = rd.get_table_data(query=query)
             data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m-%d')
             if self.analysis_period != 'by_date':
@@ -279,7 +279,7 @@ class Backtester:
     def run(cls, summary_data):
         results = {}
         for stock in summary_data['Symbol'].unique():
-            stock_data = rd.get_table_data(query=f"SELECT * FROM dbo.data_{stock} ORDER BY Date ASC")
+            stock_data = rd.get_table_data(query=f"SELECT * from public.data_{stock} ORDER BY Date ASC")
             if not stock_data.empty:
                 long_trades = cls.backtest(stock_data, 'Swing_Long', 'Stop_Loss_Long', 'Target_Long', 'long')
                 short_trades = cls.backtest(stock_data, 'Swing_Short', 'Stop_Loss_Short', 'Target_Short', 'short')

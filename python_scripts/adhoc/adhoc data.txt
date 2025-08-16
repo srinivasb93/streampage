@@ -1,4 +1,4 @@
-insert into [NSEDATA].[dbo].[STOCK_SPLIT_DATA]
+insert into [nsedata].[dbo].[STOCK_SPLIT_DATA]
 values('2008-09-09 00:00:00.000',1.032,'TATAMOTORS'),
 ('2015-06-04 00:00:00.000',1.01,'TATAMOTORS'),
 ('2015-03-19 00:00:00.000',2,'TECHM'),

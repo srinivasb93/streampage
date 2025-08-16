@@ -26,7 +26,7 @@ indices = ['NIFTY 50', 'NIFTY NEXT 50', 'NIFTY BANK', 'INDIA VIX', 'NIFTY 100', 
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -51,7 +51,7 @@ stocks = stocks_data.fetchall()
 for stock in stocks:
     stock = stock[0]
     try:
-        query = "SELECT max(DATE) FROM dbo."+stock
+        query = "SELECT max(DATE) from public."+stock
         print("Extracting Data from NSEPY for the stock : {}".format(stock))
         startdate = conn.execute(query)
         start_dt = startdate.fetchall()

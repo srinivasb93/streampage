@@ -24,7 +24,7 @@ def fetch_stocks_data(data_type='Daily', equity_type='Stocks', bhav_copy=False,
                                            sample=True, sample_count=1)
             stock_data.insert(0, 'Symbol', stock_name)
             if fetch_count:
-                query = f"select count(*) from NSEDATA.dbo.{stock_name} where Date >= '{fetch_date}'"
+                query = f"select count(*) from nsedata.public.{stock_name} where Date >= '{fetch_date}'"
                 query_data = rd.get_table_data(query=query)
                 row_count = query_data.values.tolist()[0][0]
                 stock_data.insert(1, 'Row_Count', row_count)

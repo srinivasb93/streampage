@@ -20,7 +20,7 @@ bhavdate = dt.date(2021,3,5)
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -38,14 +38,14 @@ engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 # Connect to the required SQL Server
 conn=engine.connect()
 
-query = "SELECT NAME FROM dbo.STOCKS"
+query = "SELECT NAME from public.STOCKS"
 stocks_data = conn.execute(query)
 stocks = stocks_data.fetchall()
 
 
 #stocks = ['MM']
 
-bhav_query = "SELECT * FROM dbo.BHAVCOPY"
+bhav_query = "SELECT * from public.BHAVCOPY"
 data = pd.read_sql_query(bhav_query, con=conn, parse_dates=True)
 
 print(data.head())
@@ -60,7 +60,7 @@ df_today.set_index('SYMBOL',inplace=True)
 for stock in stocks:
     stock = stock[0]
     try:
-        query = "SELECT max(DATE) FROM dbo."+stock
+        query = "SELECT max(DATE) from public."+stock
         print("Extracting Data from SQL for the stock : {}".format(stock))
         startdate = conn.execute(query)
         start_dt = startdate.fetchall()

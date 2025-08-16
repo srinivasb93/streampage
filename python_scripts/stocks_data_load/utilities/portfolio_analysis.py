@@ -17,7 +17,7 @@ plt.style.use('fivethirtyeight') #setting matplotlib style
 # Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                      "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                     "DATABASE=NSEDATA;"
+                                     "DATABASE=nsedata;"
                                      "Trusted_Connection=yes")
 
 '''
@@ -45,9 +45,9 @@ print(f"You have {len(stocksymbols)} assets in your porfolio" )
 # Fetching Data
 df = pd.DataFrame()
 for i in range(len(stocksymbols)):
-    query = "SELECT [Close] FROM DBO." + stocksymbols[i] + " WHERE DATE >= '2020-01-01 00:00:00' ORDER BY DATE ASC"
-    # query = "SELECT * FROM DBO." + "SBIN" + " WHERE DATE >= '2021-02-02 00:00:00'"
-    # query = "SELECT * FROM DBO.SONATSOFTW ORDER BY DATE ASC"
+    query = "SELECT [Close] from public." + stocksymbols[i] + " WHERE DATE >= '2020-01-01 00:00:00' ORDER BY DATE ASC"
+    # query = "SELECT * from public." + "SBIN" + " WHERE DATE >= '2021-02-02 00:00:00'"
+    # query = "SELECT * from public.SONATSOFTW ORDER BY DATE ASC"
     stock_data = pd.read_sql(query, con=conn)
     stock_data.rename(columns={'Close': stocksymbols[i]}, inplace=True)
     if i == 0:

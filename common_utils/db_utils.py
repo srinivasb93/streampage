@@ -1,15 +1,15 @@
 import asyncio
 from functools import partial
-from sqlalchemy import create_engine, text
 import pandas as pd
 import logging
-from common_utils.read_write_sql_data import create_connection
+from .read_write_sql_data import create_connection
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Database configuration
-DATABASE = "NSEDATA"
+DATABASE = "nsedata"
+# CHANGED: create_connection is now PostgreSQL compatible
 engine = create_connection(database=DATABASE)
 
 async def run_in_executor(func, *args):
@@ -19,12 +19,13 @@ async def run_in_executor(func, *args):
 
 def execute_query(query, params=None):
     """Synchronous function to execute a SQL query."""
+    # ENHANCEMENT: Use a transactional block for safety
     with engine.connect() as conn:
-        if params:
-            result = conn.execute(query, params)
-        else:
-            result = conn.execute(query)
-        conn.commit()
+        with conn.begin(): # Start a transaction
+            if params:
+                result = conn.execute(query, params)
+            else:
+                result = conn.execute(query)
         return result
 
 def fetch_query(query, params=None):

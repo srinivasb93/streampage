@@ -10,7 +10,7 @@ connection = pyodbc.connect(
                             'Trusted_Connection=yes;'
                            )
 
-query = "SELECT * FROM DBO.LONGTERM_COMBINED"
+query = "SELECT * from public.LONGTERM_COMBINED"
 data = pd.read_sql(query, con=connection, parse_dates=True)
 data = data.rename(columns={'index': 'Date'})
 data['Month'] = data['Date'].dt.month

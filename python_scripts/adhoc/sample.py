@@ -12,7 +12,7 @@ print(time.time())
 def extract_stock_data(stock_name, data_source='SQL', period_sql='Daily', period_yf='1y', interval_yf='1d'):
     periods = {"Weekly": "_W", "Monthly": "_M", "Quarterly": "_Q", "Yearly": "_Y"}
     stock_name += periods.get(period_sql, "")
-    query = f'Select * from dbo.{stock_name} order by Date ASC'
+    query = f'Select * from public.{stock_name} order by Date ASC'
     df = rd.get_table_data(query=query)
     df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
     df["Date"] = pd.to_datetime(df["Date"])

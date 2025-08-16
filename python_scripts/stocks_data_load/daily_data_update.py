@@ -10,19 +10,19 @@ from common_utils import read_write_sql_data as rd
 
 
 # Fetch all table details
-# stock_list = conn.execute('select * from dbo.stocks')
+# stock_list = conn.execute('select * from public.stocks')
 # stock_list = [stock[0] for stock in stock_list]
 # # stock_list = ['MOTHERSUMI', 'BAJFINANCE']
 
 # start_dt = start_dt.strftime(format='%Y-%m-%d')
 #
-# stock_list_wk = conn.execute('select * from dbo.stocks_weekly')
+# stock_list_wk = conn.execute('select * from public.stocks_weekly')
 # stock_list_wk = [stock[0] for stock in stock_list_wk]
 # # stock_list_wk = ['MOTHERSUMI_W', 'BAJFINANCE_W']
 # start_dt_wk = date_today - dt.timedelta(weeks=2)
 # start_dt_wk = start_dt_wk.strftime(format='%Y-%m-%d')
 #
-# stock_list_mn = conn.execute('select * from dbo.stocks_monthly')
+# stock_list_mn = conn.execute('select * from public.stocks_monthly')
 # stock_list_mn = [stock[0] for stock in stock_list_mn]
 # # stock_list_mn = ['MOTHERSUMI_M', 'BAJFINANCE_M']
 # start_dt_mn = date_today - pd.offsets.DateOffset(months=2)
@@ -40,7 +40,7 @@ date_today = pd.datetime.dt.today()
 start_dt = date_today - dt.timedelta(35)
 
 for stock in stock_list:
-    get_query = "select * from dbo." + stock + " where DATE >= '" + str(start_dt) + "' ORDER BY DATE ASC"
+    get_query = "select * from public." + stock + " where DATE >= '" + str(start_dt) + "' ORDER BY DATE ASC"
     data = rd.get_table_data(query=get_query)
     data['Symbol'] = stock
     data['Range'] = round(data['High'] - data['Low'], 2)
@@ -53,7 +53,7 @@ for stock in stock_list:
     daily_data = daily_data.append(data.tail(1), ignore_index=True)
 
 for stock in stock_list_wk:
-    get_query_wk = "SELECT Volume,Wk_Cls_Chg,Range,Candle,High_52_Wk,Low_52_Wk,Wk_EMA_20,ATH,ATL,Max_Wk_Chg,Max_Wk_Vol FROM dbo." \
+    get_query_wk = "SELECT Volume,Wk_Cls_Chg,Range,Candle,High_52_Wk,Low_52_Wk,Wk_EMA_20,ATH,ATL,Max_Wk_Chg,Max_Wk_Vol from public." \
                    + stock + " where DATE >= '" + str(start_dt_wk) + "' ORDER BY DATE ASC"
     data_wk = pd.read_sql_query(get_query_wk, parse_dates=True, con=conn)
     data_wk['Symbol'] = stock.split('_')[0]
@@ -62,7 +62,7 @@ for stock in stock_list_wk:
 # print(weekly_data.head())
 
 for stock in stock_list_mn:
-    get_query_mn = "SELECT Volume,Mth_Cls_Chg,Range,Candle,Max_Mth_Vol,Max_Mth_Range from dbo." \
+    get_query_mn = "SELECT Volume,Mth_Cls_Chg,Range,Candle,Max_Mth_Vol,Max_Mth_Range from public." \
                    + stock + " where DATE >= '" + str(start_dt_mn) + "' ORDER BY DATE ASC"
     data_mn = pd.read_sql_query(get_query_mn, parse_dates=True, con=conn)
     data_mn['Symbol'] = stock.split('_')[0]

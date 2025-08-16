@@ -35,7 +35,7 @@ class EODAnalysis:
     @staticmethod
     def atr(df, n_days=14):
         data_copy = df.copy()
-        high, low, close = data_copy['High'], data_copy['Low'], data_copy['Close']
+        high, low, close = data_copy['high'], data_copy['low'], data_copy['close']
         data_copy['tr0'] = abs(high - low)
         data_copy['tr1'] = abs(high - close.shift())
         data_copy['tr2'] = abs(low - close.shift())
@@ -52,7 +52,7 @@ class EODAnalysis:
             x_scaled = sm.add_constant(x[i - n:i])
             model = sm.OLS(y_scaled, x_scaled)
             results = model.fit()
-            slopes.append(results.params[-1])
+            slopes.append(results.params.iloc[-1])
             reg_prices.append(model.predict(results.params)[-1])
         return reg_prices
 
@@ -67,46 +67,45 @@ class EODAnalysis:
 
     def get_query(self, stock):
         if self.analysis_period == 'by_date':
-            return f"SELECT * FROM dbo.{stock} WHERE DATE BETWEEN '{self.analysis_start_date}' AND '{self.analysis_end_date}' ORDER BY DATE ASC"
+            return f"SELECT * from public.\"{stock}\" WHERE timestamp BETWEEN '{self.analysis_start_date}' AND '{self.analysis_end_date}' ORDER BY timestamp ASC"
         else:
-            return f"SELECT top {self.analysis_days} * FROM dbo.{stock} ORDER BY DATE DESC"
+            return f"SELECT * from public.\"{stock}\" ORDER BY timestamp DESC LIMIT {self.analysis_days}"
 
     def preprocess_data(self, data, stock):
-        data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m-%d')
         if self.analysis_period != 'by_date':
-            data.sort_values(by=['Date'], ascending=False, inplace=True)
+            data.sort_values(by=['timestamp'], ascending=False, inplace=True)
         data['Symbol'] = stock
         return data
 
     def calculate_indicators(self, data):
-        data['Pct_Chg'] = round(data['Close'].pct_change() * 100, 1)
-        data['Pct_Chg_5D'] = round(data['Close'].pct_change(5) * 100, 1)
-        data['Pct_Chg_20D'] = round(data['Close'].pct_change(20) * 100, 1)
+        data['Pct_Chg'] = round(data['close'].pct_change() * 100, 1)
+        data['Pct_Chg_5D'] = round(data['close'].pct_change(5) * 100, 1)
+        data['Pct_Chg_20D'] = round(data['close'].pct_change(20) * 100, 1)
         if self.analysis_days >= 365:
-            data['Pct_Chg_365D'] = round(data['Close'].pct_change(240) * 100, 1)
-        data['Range'] = round(data['High'] - data['Low'], 2)
-        data['HH'] = round(data['High'] - data['High'].shift(), 2)
-        data['LL'] = round(data['Low'] - data['Low'].shift(), 2)
-        data['High_20'] = data['High'].rolling(20, min_periods=20).max()
-        data['Low_20'] = data['Low'].rolling(20, min_periods=20).min()
-        data['ATR'] = round(ta.atr(data['High'], data['Low'], data['Close'], length=14), 2)
+            data['Pct_Chg_365D'] = round(data['close'].pct_change(240) * 100, 1)
+        data['Range'] = round(data['high'] - data['low'], 2)
+        data['HH'] = round(data['high'] - data['high'].shift(), 2)
+        data['LL'] = round(data['low'] - data['low'].shift(), 2)
+        data['High_20'] = data['high'].rolling(20, min_periods=20).max()
+        data['Low_20'] = data['low'].rolling(20, min_periods=20).min()
+        data['ATR'] = round(ta.atr(data['high'], data['low'], data['close'], length=14), 2)
         data['Range_ATR'] = round(data['Range'] / data['ATR'], 1)
-        data['Vol_Avg20'] = round(data['Volume'].rolling(20, min_periods=20).mean(), 0)
-        data['EMA_20'] = round(data['Close'].ewm(span=20, min_periods=20).mean(), 2)
+        data['Vol_Avg20'] = round(data['volume'].rolling(20, min_periods=20).mean(), 0)
+        data['EMA_20'] = round(data['close'].ewm(span=20, min_periods=20).mean(), 2)
         if self.analysis_days >= 200:
-            data['EMA_60'] = round(data['Close'].ewm(span=60, min_periods=60).mean(), 2)
-            data['EMA_200'] = round(data['Close'].ewm(span=200).mean(), 2)
-        data['Reg_6'] = self.slope(data['Close'], n=6)
+            data['EMA_60'] = round(data['close'].ewm(span=60, min_periods=60).mean(), 2)
+            data['EMA_200'] = round(data['close'].ewm(span=200).mean(), 2)
+        data['Reg_6'] = self.slope(data['close'], n=6)
         data['Reg_6'] = round(data['Reg_6'], 2)
-        data['Reg_18'] = round(ta.linreg(data['Close'], length=18), 2)
+        data['Reg_18'] = round(ta.linreg(data['close'], length=18), 2)
         data['Reg_6_Chg'] = round(data['Reg_6'] - data['Reg_6'].shift(), 1)
         data['Reg_Cross'] = round(data['Reg_6'] - data['Reg_18'], 1)
-        data['Vol_Abv_Avg20'] = round(data['Volume'] / data['Vol_Avg20'], 2)
-        data['Cls_Abv_EMA20'] = round(data['Close'] - data['EMA_20'], 2)
+        data['Vol_Abv_Avg20'] = round(data['volume'] / data['Vol_Avg20'], 2)
+        data['Cls_Abv_EMA20'] = round(data['close'] - data['EMA_20'], 2)
         if self.analysis_days >= 200:
-            data['Cls_Abv_EMA60'] = round(data['Close'] - data['EMA_60'], 2)
-            data['Cls_Abv_EMA200'] = round(data['Close'] - data['EMA_200'], 2)
-        data['Cls_Abv_Reg6'] = round(data['Close'] - data['Reg_6'], 2)
+            data['Cls_Abv_EMA60'] = round(data['close'] - data['EMA_60'], 2)
+            data['Cls_Abv_EMA200'] = round(data['close'] - data['EMA_200'], 2)
+        data['Cls_Abv_Reg6'] = round(data['close'] - data['Reg_6'], 2)
         return data
 
     def analyze_price_action(self, data):
@@ -209,22 +208,22 @@ class EODAnalysis:
             data.loc[k, 'Curr_Supp'] = round(curr_support, 2)
 
             # Pullback up at Support in the direction of the trend
-            if prev_support < curr_support < data.loc[k, 'Low'] and curr_res > prev_res:
+            if prev_support < curr_support < data.loc[k, 'low'] and curr_res > prev_res:
                 data.loc[k, 'Support'] = 'Price_Abv_Supp'
                 poc_bl += 1
-            if prev_support < curr_support and data.loc[k, 'Low'] < curr_support and curr_res > prev_res:
+            if prev_support < curr_support and data.loc[k, 'low'] < curr_support and curr_res > prev_res:
                 data.loc[k, 'Support'] = 'Price_Crs_Abv_Supp'
                 poc_bl += 1
-            elif curr_support > prev_support and curr_res < prev_res and data.loc[k, 'Close'] > curr_res:
+            elif curr_support > prev_support and curr_res < prev_res and data.loc[k, 'close'] > curr_res:
                 data.loc[k, 'Support'] = 'Price_Abv_Cur_Res'
                 poc_bl += 1
 
-        sup_break_chk = (data.loc[k, 'High'] > curr_support
-                         and data.loc[k - 1, 'Close'] > curr_support > data.loc[k, 'Close']
-                         and data.loc[k - 2, 'Close'] > curr_support)
-        psup_break_chk = (data.loc[k, 'High'] > prev_support
-                          and data.loc[k - 1, 'Close'] > prev_support > data.loc[k, 'Close']
-                          and data.loc[k - 2, 'Close'] > prev_support)
+        sup_break_chk = (data.loc[k, 'high'] > curr_support
+                         and data.loc[k - 1, 'close'] > curr_support > data.loc[k, 'close']
+                         and data.loc[k - 2, 'close'] > curr_support)
+        psup_break_chk = (data.loc[k, 'high'] > prev_support
+                          and data.loc[k - 1, 'close'] > prev_support > data.loc[k, 'close']
+                          and data.loc[k - 2, 'close'] > prev_support)
 
         if sup_break_chk and psup_break_chk:
             data.loc[k, 'Break_Sup_Res'] = 'Both_Sup_Broken_Down'
@@ -244,23 +243,23 @@ class EODAnalysis:
             data.loc[k, 'Curr_Res'] = round(curr_res, 2)
 
             # Pullback down at Resistance in the direction of the trend
-            if prev_res > curr_res > data.loc[k, 'High'] and curr_support < prev_support:
+            if prev_res > curr_res > data.loc[k, 'high'] and curr_support < prev_support:
                 data.loc[k, 'Resistance'] = 'Price_Blw_Res'
                 poc_br += 1
-            if prev_res > curr_res and prev_res > data.loc[k, 'Close'] and data.loc[k, 'High'] > curr_res < data.loc[k - 1, 'Close']:
+            if prev_res > curr_res and prev_res > data.loc[k, 'close'] and data.loc[k, 'high'] > curr_res < data.loc[k - 1, 'close']:
                 data.loc[k, 'Resistance'] = 'Price_Crs_Blw_Res'
                 poc_br += 1
-            elif curr_res < prev_res and prev_support > curr_support > data.loc[k, 'High'] <= data.loc[k - 1, 'Close']:
+            elif curr_res < prev_res and prev_support > curr_support > data.loc[k, 'high'] <= data.loc[k - 1, 'close']:
                 data.loc[k, 'Resistance'] = 'Price_Blw_Cur_Sup'
                 poc_br += 1
 
         # Resistance break check
-        res_break_chk = (data.loc[k, 'Low'] < curr_res
-                         and data.loc[k - 1, 'Close'] < curr_res <= data.loc[k, 'Close']
-                         and data.loc[k - 2, 'Close'] < curr_res)
-        pres_break_chk = (data.loc[k, 'Low'] < prev_res
-                          and data.loc[k - 1, 'Close'] < prev_res <= data.loc[k, 'Close']
-                          and data.loc[k - 2, 'Close'] < prev_res)
+        res_break_chk = (data.loc[k, 'low'] < curr_res
+                         and data.loc[k - 1, 'close'] < curr_res <= data.loc[k, 'close']
+                         and data.loc[k - 2, 'close'] < curr_res)
+        pres_break_chk = (data.loc[k, 'low'] < prev_res
+                          and data.loc[k - 1, 'close'] < prev_res <= data.loc[k, 'close']
+                          and data.loc[k - 2, 'close'] < prev_res)
 
         if res_break_chk and pres_break_chk:
             data.loc[k, 'Break_Sup_Res'] = 'Both_Res_Broken_Up'
@@ -273,19 +272,19 @@ class EODAnalysis:
     def analyze_breakouts(data, k, poc_bl, poc_br):
         # Check for 20 days High/Low breakout. Ensure we have at least 20 days of data
         if k >= 20:
-            high_20 = data.loc[k - 20:k - 1, 'High'].max()
-            low_20 = data.loc[k - 20:k - 1, 'Low'].min()
-            high_date = data.loc[k - 20:k - 1, 'High'].idxmax()
-            low_date = data.loc[k - 20:k - 1, 'Low'].idxmin()
+            high_20 = data.loc[k - 20:k - 1, 'high'].max()
+            low_20 = data.loc[k - 20:k - 1, 'low'].min()
+            high_date = data.loc[k - 20:k - 1, 'high'].idxmax()
+            low_date = data.loc[k - 20:k - 1, 'low'].idxmin()
 
             days_since_high = k - high_date
             days_since_low = k - low_date
 
-            if (data.loc[k, 'Close'] > high_20 and days_since_high >= 10 and
+            if (data.loc[k, 'close'] > high_20 and days_since_high >= 10 and
                     data.loc[k, 'Reg_6'] > data.loc[k, 'Reg_18']):
                 data.loc[k, 'Breakout_20'] = 'Breakout_20_Up'
                 poc_bl += 1
-            elif (data.loc[k, 'Close'] < low_20 and days_since_low >= 10 and
+            elif (data.loc[k, 'close'] < low_20 and days_since_low >= 10 and
                   data.loc[k, 'Reg_6'] < data.loc[k, 'Reg_18']):
                 data.loc[k, 'Breakout_20'] = 'Breakout_20_Down'
                 poc_br += 1
@@ -294,10 +293,10 @@ class EODAnalysis:
 
     def analyze_narrow_range(self, data):
         # Calculate the Average True Range (ATR) for the last 20 days
-        data['ATR_20'] = self.atr(data[['High', 'Low', 'Close']], 20)
+        data['ATR_20'] = self.atr(data[['high', 'low', 'close']], 20)
 
         # Calculate the range as a percentage of the closing price
-        data['Range_Pct'] = round(((data['High'] - data['Low']) / data['Close'])*100, 1)
+        data['Range_Pct'] = round(((data['high'] - data['low']) / data['close'])*100, 1)
 
         # Calculate the 20-day average range percentage
         data['Avg_Range_Pct_20'] = round(data['Range_Pct'].rolling(window=20).mean(), 1)
@@ -317,7 +316,7 @@ class EODAnalysis:
 
     def run_analysis(self):
         for stock in self.stocks_list:
-            stock = stock.replace('&', '').replace('-', '')
+            stock = stock.replace('-', '_')
             print(f"Processing data for the stock - {stock}")
             data = self.process_stock_data(stock)
             # load_msg = rd.load_sql_data(data_to_load=data, table_name='data_' + stock)

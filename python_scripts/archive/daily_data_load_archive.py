@@ -15,7 +15,7 @@ class Dataload:
     # Use this for windows authentication
     params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                      "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                     "DATABASE=NSEDATA;"
+                                     "DATABASE=nsedata;"
                                      "Trusted_Connection=yes")
 
     '''
@@ -73,7 +73,7 @@ class Dataload:
         """ Method to get stocks and indices list from SQL database """
         if data_type == 'Stock':
             all_stocks = rd.get_table_data(selected_table='ALL_STOCKS')
-            my_holdings = rd.get_table_data(selected_database='ANALYTICS', selected_table='EQUITY_HOLDINGS')
+            my_holdings = rd.get_table_data(selected_database='analytics', selected_table='EQUITY_HOLDINGS')
             stocks = list(set(all_stocks[all_stocks['STK_INDEX'] == "NIFTY 200"]['SYMBOL'].values.tolist() +
                                 my_holdings['Stock_Symbol'].values.tolist()))
         else:
@@ -91,7 +91,7 @@ class Dataload:
             bhav_table = 'BHAVCOPY_INDICES'
 
         # Extract stock/index bhavcopy data into a dataframe
-        bhav_query = "SELECT * FROM NSEDATA.dbo." + bhav_table
+        bhav_query = "SELECT * FROM nsedata.public." + bhav_table
         data = pd.read_sql_query(bhav_query, con=self.conn, parse_dates=True)
         # Extract data of required columns from BHAVCOPY data as in the SQL tables format
         if data_type == 'Stock':
@@ -196,7 +196,7 @@ class Dataload:
         if stock == 'Nifty Financial Services':
             stock = 'NIFTY_FIN_SERVICE'
         # Extract maximum date for until which data is present in SQL for a stock
-        query_max_date = "SELECT max(DATE) FROM dbo." + stock
+        query_max_date = "SELECT max(DATE) from public." + stock
         startdate = Dataload.conn.execute(text(query_max_date))
         start_dt = startdate.fetchall()
         start_dt = start_dt[0][0]

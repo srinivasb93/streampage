@@ -1,8 +1,8 @@
 import pandas as pd
 from common_utils import read_write_sql_data as rd, utils as utils
 
-# The data should have columns: 'Date', 'Open', 'High', 'Low', 'Close'
-data = rd.get_table_data(selected_table='GOLDBEES', sort=True)
+# The data should have columns: 'timestamp', 'Open', 'High', 'Low', 'Close'
+data = rd.get_table_data(selected_table='SBIN', sort=True)
 
 df = pd.DataFrame(data)
 
@@ -23,10 +23,10 @@ tradebook = []
 
 # Backtesting loop
 for i in range(1, len(df)):  # Start from 1 to compare with previous day's close
-    entry_price = df['Open'][i]
-    high_price = df['High'][i]
-    low_price = df['Low'][i]
-    previous_close = df['Close'][i - 1]  # Yesterday's close price
+    entry_price = df['open'][i]
+    high_price = df['high'][i]
+    low_price = df['low'][i]
+    previous_close = df['close'][i - 1]  # Yesterday's close price
 
     # Check if current open price is above yesterday's close price
     if entry_price > previous_close:
@@ -46,13 +46,13 @@ for i in range(1, len(df)):  # Start from 1 to compare with previous day's close
             trade_status = "Win"
             winning_trades += 1
         else:
-            exit_price = df['Close'][i]
+            exit_price = df['close'][i]
             profit = (entry_price - exit_price) * shares_sold
             trade_status = "No Target/Stop Loss Hit"
 
         # Log the trade in the tradebook
         tradebook.append({
-            'Date': df['Date'][i],
+            'timestamp': df['timestamp'][i],
             'Entry Price': entry_price,
             'Exit Price': exit_price,
             'Shares Sold': shares_sold,
@@ -69,7 +69,7 @@ for i in range(1, len(df)):  # Start from 1 to compare with previous day's close
 tradebook_df = pd.DataFrame(tradebook)
 
 # Add a 'Year' column to the tradebook for grouping
-tradebook_df['Year'] = tradebook_df['Date'].dt.year
+tradebook_df['Year'] = tradebook_df['timestamp'].dt.year
 
 # Yearly summary
 yearly_summary = tradebook_df.groupby('Year').apply(

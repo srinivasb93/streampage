@@ -1,7 +1,6 @@
 import pandas as pd
 import sqlalchemy as sa
 import datetime as dt
-import pyodbc
 import urllib
 import yfinance as yf
 from jugaad_data import nse
@@ -16,20 +15,16 @@ enddate = dt.date.today()
 # enddate = "01-Mar-2024"
 
 # indices = ['NIFTY 50', 'NIFTY NEXT 50', 'NIFTY BANK', 'INDIA VIX', 'NIFTY 100', 'NIFTY 500', 'NIFTY MIDCAP 100', 'NIFTY MIDCAP 50', 'NIFTY INFRA', 'NIFTY REALTY', 'NIFTY ENERGY', 'NIFTY FMCG', 'NIFTY MNC', 'NIFTY PHARMA', 'NIFTY PSE', 'NIFTY PSU BANK', 'NIFTY SERV SECTOR', 'NIFTY IT', 'NIFTY SMLCAP 100', 'NIFTY 200', 'NIFTY AUTO', 'NIFTY MEDIA', 'NIFTY METAL', 'NIFTY COMMODITIES', 'NIFTY CONSUMPTION', 'NIFTY CPSE', 'NIFTY FIN SERVICE', 'NIFTY SMLCAP 50', 'NIFTY SMLCAP 250']
-indices = ['NIFTY 50']
+indices = ['Nifty 50']
 
 # index_data = index_history(symbol=indices[0], start_date=startdate, end_date=enddate)
 # data = nse.index_df(symbol=indices[0], from_date=startdate, to_date=enddate)
 # print(data)
-df = yf.Ticker('GLAND.NS').history(period='max',
-                                             interval='1d')
-print(df)
-exit()
 #Use this for windows authentication
-params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
-                                 "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
-                                 "Trusted_Connection=yes")
+# params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
+#                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
+#                                  "DATABASE=nsedata;"
+#                                  "Trusted_Connection=yes")
 
 '''
 #Use this for SQL server authentication
@@ -41,10 +36,10 @@ params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
 '''
 
 #Connection String
-engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
-
-# Connect to the required SQL Server
-conn=engine.connect()
+# engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
+#
+# # Connect to the required SQL Server
+# conn=engine.connect()
 
 for stk_index in indices:
     print("Extracting Data from NSE for the index : {}" .format(stk_index))
@@ -74,6 +69,6 @@ for stk_index in indices:
 
     print("Start Data Load for the index : {}".format(stk_index))
 
-    stock_data.to_sql(name=stk_index, con=conn, if_exists='replace', index=False)
+    # stock_data.to_sql(name=stk_index, con=conn, if_exists='replace', index=False)
     print("Data Load done for the index : {}".format(stk_index))
 

@@ -4,14 +4,16 @@ from common_utils import read_write_sql_data as rd
 import datetime as dt
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from common_utils.utils import fetch_indicies_sectors_list
 from lightweight_charts.widgets import StreamlitChart
 
+st.set_page_config(layout="wide")
 
 @st.cache_data
 def load_and_prepare_data():
     agg_df = rd.get_table_data(selected_table='AGG_DATA')
     eod_df = rd.get_table_data(selected_table='EOD_Summary')
-    eod_data_cols = ['Date', 'Symbol', 'Pct_Chg_5D', 'Pct_Chg_20D', 'Pct_Chg_365D', 'HH', 'LL', 'High_20', 'Low_20',
+    eod_data_cols = ['timestamp', 'Symbol', 'Pct_Chg_5D', 'Pct_Chg_20D', 'Pct_Chg_365D', 'HH', 'LL', 'High_20', 'Low_20',
                      'ATR', 'Range_ATR', 'Vol_Avg20', 'EMA_20', 'EMA_60', 'EMA_200', 'Reg_6', 'Reg_18', 'Reg_6_Chg',
                      'Reg_Cross', 'Vol_Abv_Avg20', 'Cls_Abv_EMA20', 'Cls_Abv_EMA60', 'Cls_Abv_EMA200',
                      'Cls_Abv_Reg6', 'Curr_Supp', 'Prev_Supp', 'Curr_Res', 'Prev_Res', 'Resistance', 'Support',
@@ -21,33 +23,34 @@ def load_and_prepare_data():
     eod_df = eod_df[eod_data_cols]
 
     merged_df = agg_df.join(eod_df, rsuffix='_right', how='outer')
-    merged_df['ATH'] = merged_df['High'][merged_df['Date'] == merged_df['ATH_Date']]
-    merged_df['ATL'] = merged_df['Low'][merged_df['Date'] == merged_df['ATL_Date']]
+    merged_df['ATH'] = merged_df['high'][merged_df['timestamp'] == merged_df['ATH_Date']]
+    merged_df['ATL'] = merged_df['low'][merged_df['timestamp'] == merged_df['ATL_Date']]
     return merged_df
 
 
 @st.cache_data
 def fetch_stock_or_index_data(symbol, start_date=None, end_date=None, regular_data=False):
-    stock_name = symbol.replace("-", "").replace("&", "")
+    stock_name = symbol.replace("-", "_")
     if start_date and end_date:
-        query = f"SELECT Date, [Close] FROM dbo.{stock_name} WHERE Date between '{start_date}' AND '{end_date}' ORDER BY Date"
+        query = f"SELECT timestamp, close from public.\"{stock_name}\" WHERE timestamp between '{start_date}' AND '{end_date}' ORDER BY timestamp"
     else:
-        query = f"SELECT * FROM dbo.{stock_name} ORDER BY Date"
+        query = f"SELECT * from public.\"{stock_name}\" ORDER BY timestamp"
 
     # Fetch data from SQL Server
     stock_data = rd.get_table_data(query=query)
+    stock_data.set_index(keys='timestamp', inplace=True)
     if regular_data:
         return stock_data
-    stock_data.set_index(keys='Date', inplace=True)
-    stock_data['Cum_Return'] = round(((1 + stock_data['Close'].pct_change()).cumprod() - 1)*100, 1)
-    stock_data['Cum_Return'].fillna(value=0, inplace=True)
+
+    stock_data['Cum_Return'] = round(((1 + stock_data['close'].pct_change()).cumprod() - 1)*100, 1)
+    stock_data['Cum_Return'] = stock_data['Cum_Return'].fillna(value=0)
     stock_data['Symbol'] = symbol
     return stock_data
 
 
 @st.cache_data
 def plot_line_chart(data):
-    fig = px.line(data, x=data.index, y='Cum_Return', color='Symbol', markers=False, hover_data='Close',
+    fig = px.line(data, x=data.index, y='Cum_Return', color='Symbol', markers=False, hover_data='close',
                   height=580, width=1300)
     fig.update_layout({
         'title': 'Returns Comparison Chart',
@@ -65,7 +68,7 @@ def display_interactive_dataframe(df):
 
     st.dataframe(df.style
                  .format({
-                        'Close': '{:.2f}',
+                        'close': '{:.2f}',
                         'Day_Chg_%': '{:.2f}%',
                         '5D_Chg_%': '{:.2f}%',
                         '20D_Chg_%': '{:.2f}%',
@@ -92,6 +95,7 @@ def display_interactive_dataframe(df):
 
                     # Get the selected row
                     selected_row = df[df['Symbol'] == selected_symbol].iloc[0]
+                    selected_row['close'] = float(selected_row['close'])
 
                     # Input field for reason
                     reason = st.text_area("Enter reason:")
@@ -103,7 +107,7 @@ def display_interactive_dataframe(df):
                     if st.form_submit_button("Add to Watchlist"):
                         try:
                             # Call your existing database save function here
-                            req_cols = ['Symbol', 'Close', 'Reason', 'Date_Added']
+                            req_cols = ['Symbol', 'close', 'Reason', 'Date_Added']
                             load_msg = rd.load_sql_data(data_to_load=selected_row[req_cols].to_frame().T,
                                                         table_name='WATCHLIST',
                                                         load_type='append')
@@ -169,9 +173,9 @@ def create_stock_screener():
     st.sidebar.subheader('Price Filters')
     price_range = st.sidebar.slider(
         'Price Range (₹)',
-        df['Close'].values.min(),
-        df['Close'].values.max(),
-        (df['Close'].values.min(), df['Close'].values.max())
+        df['close'].values.min(),
+        df['close'].values.max(),
+        (df['close'].values.min(), df['close'].values.max())
     )
 
     performance_threshold = st.sidebar.slider(
@@ -188,24 +192,24 @@ def create_stock_screener():
         filtered_df = filtered_df[~filtered_df['Breakout_20'].isna()]
     if 'Near All Time High' in generic_filters:
         filtered_df = filtered_df[
-            abs(((filtered_df['ATH'] - filtered_df['Close']) / filtered_df['Close'])*100) <= 5][
-            filtered_df['High'] < filtered_df['ATH']][(filtered_df['ATH_Date'] - filtered_df['Date']).dt.days > 20]
+            abs(((filtered_df['ATH'] - filtered_df['close']) / filtered_df['close'])*100) <= 5][
+            filtered_df['high'] < filtered_df['ATH']][(filtered_df['ATH_Date'] - filtered_df['timestamp']).dt.days > 20]
     if 'Near 52 Week High' in generic_filters:
         # filtered_df = filtered_df[
-        #     abs(((filtered_df['High_52W'] - filtered_df['Close']) / filtered_df['Close'])*100) <= 5][
-        #     filtered_df['High'] < filtered_df['High_52W']][
-        #     (filtered_df['High_52W_Date'] - filtered_df['Date']).dt.days > 20]
+        #     abs(((filtered_df['High_52W'] - filtered_df['close']) / filtered_df['close'])*100) <= 5][
+        #     filtered_df['high'] < filtered_df['High_52W']][
+        #     (filtered_df['High_52W_Date'] - filtered_df['timestamp']).dt.days > 20]
         filtered_df = filtered_df[
-            abs(((filtered_df['High_52W'] - filtered_df['Close']) / filtered_df['Close']) * 100) <= 5][
-            filtered_df['High'] < filtered_df['High_52W']]
+            abs(((filtered_df['High_52W'] - filtered_df['close']) / filtered_df['close']) * 100) <= 5][
+            filtered_df['high'] < filtered_df['High_52W']]
     if 'At All Time High' in generic_filters:
-        filtered_df = filtered_df[filtered_df['ATH_Date'] == filtered_df['Date'].max()]
+        filtered_df = filtered_df[filtered_df['ATH_Date'] == filtered_df['timestamp'].max()]
     if 'At All Time Low' in generic_filters:
-        filtered_df = filtered_df[filtered_df['ATL_Date'] == filtered_df['Date'].max()]
+        filtered_df = filtered_df[filtered_df['ATL_Date'] == filtered_df['timestamp'].max()]
     if 'At 52 Week High' in generic_filters:
-        filtered_df = filtered_df[filtered_df['High'] == filtered_df['High_52W']]
+        filtered_df = filtered_df[filtered_df['high'] == filtered_df['High_52W']]
     if 'At 52 Week Low' in generic_filters:
-        filtered_df = filtered_df[filtered_df['Low'] == filtered_df['Low_52W']]
+        filtered_df = filtered_df[filtered_df['low'] == filtered_df['Low_52W']]
 
     # Support/ Resistance Filters
     if sup_res_filter == 'At Support':
@@ -217,8 +221,8 @@ def create_stock_screener():
 
     # Price filter
     filtered_df = filtered_df[
-        (filtered_df['Close'] >= price_range[0]) &
-        (filtered_df['Close'] <= price_range[1])
+        (filtered_df['close'] >= price_range[0]) &
+        (filtered_df['close'] <= price_range[1])
         ]
 
     # Volume filter
@@ -227,9 +231,9 @@ def create_stock_screener():
     elif volume_filter == 'Super High Volume (2x Avg)':
         filtered_df = filtered_df[filtered_df['Vol_Abv_Avg20'] > 2]
     elif volume_filter == 'Daily Volume GT Weekly':
-        filtered_df = filtered_df[filtered_df['Volume'] > filtered_df['Volume_W']]
+        filtered_df = filtered_df[filtered_df['volume'] > filtered_df['Volume_W']]
     elif volume_filter == 'Daily Volume GT Monthly':
-        filtered_df = filtered_df[filtered_df['Volume'] > filtered_df['Volume_M']]
+        filtered_df = filtered_df[filtered_df['volume'] > filtered_df['Volume_M']]
 
     # EMA filters
     if 'Above 20 EMA' in ema_filter:
@@ -258,14 +262,14 @@ def create_stock_screener():
 
     # Select columns to display
     display_columns = [
-        'Symbol', 'Close', 'Pct_Chg_D', 'Pct_Chg_5D', 'Pct_Chg_20D', 'Pct_Chg_365D', 'Reg_Cross_Sig',
+        'Symbol', 'close', 'Pct_Chg_D', 'Pct_Chg_5D', 'Pct_Chg_20D', 'Pct_Chg_365D', 'Reg_Cross_Sig',
         'Vol_Abv_Avg20', 'Resistance', 'Support', 'Break_Sup_Res', 'Breakout_20'
     ]
 
     # Format the display dataframe
     display_df = filtered_df[display_columns].copy()
     display_df.columns = [
-        'Symbol', 'Close', 'Day_Chg_%', '5D_Chg_%', '20D_Chg_%', '365D_Chg_%',  'Reg_Cross_Sig',
+        'Symbol', 'close', 'Day_Chg_%', '5D_Chg_%', '20D_Chg_%', '365D_Chg_%',  'Reg_Cross_Sig',
         'Volume/Avg', 'Resistance', 'Support', 'Break_Sup_Res', 'Breakout_20'
     ]
 
@@ -310,13 +314,10 @@ def trading():
         else:
             top_row = st.columns([.4, .6], vertical_alignment='center', gap='medium')
         stocks_list_df = rd.get_table_data(selected_table='ALL_STOCKS')
-        stock_indices_df = rd.get_table_data(selected_table='STOCK_INDICES')
-        stock_sectors_df = rd.get_table_data(selected_table='STOCK_SECTORS')
 
         stock_options = stocks_list_df['SYMBOL'].unique().tolist()
-        # stock_indices = stock_indices_df['name'].unique().tolist()
-        stock_indices = ['NIFTY_50', 'NIFTY_500', 'NIFTY_NEXT_50', 'NIFTY_MIDCAP_100', 'NIFTY_SMLCAP_250']
-        stock_sectors = stock_sectors_df['name'].unique().tolist()
+        stock_indices = fetch_indicies_sectors_list(required="indices")
+        stock_sectors = fetch_indicies_sectors_list(required="sectors")
 
         with top_row[0]:
             if duration == 'Date Range':
@@ -451,16 +452,10 @@ def trading():
 
             else:
                 sector = st.sidebar.selectbox("Choose one Sector", options=stock_sectors)
-                sector_map = {'NIFTY_SERV_SECTOR': 'NIFTY_SERVICES_SECTOR',
-                              'NIFTY_INFRA': 'NIFTY_INFRASTRUCTURE',
-                              'NIFTY_FIN_SERVICE': 'NIFTY_FINANCIAL_SERVICES',
-                              'NIFTY_CONSUMPTION': 'NIFTY_INDIA_CONSUMPTION'}
 
-                ref_data = rd.get_table_data(selected_table=sector_map.get(sector, sector)+'_REF')
+                ref_data = rd.get_table_data(selected_table=sector.replace(" ", "_")+'_REF')
                 stocks_with_index = ref_data['Symbol'].unique().tolist()
-                sector_map_reverse = {v: k for k, v in sector_map.items()}
                 sector_symbol = stocks_with_index[0]
-                sector_name = sector_map_reverse.get(sector_symbol, sector_symbol)
                 stocks_list = stocks_with_index[1:]
                 missing_stocks = []
                 for stk_index in stocks_list:

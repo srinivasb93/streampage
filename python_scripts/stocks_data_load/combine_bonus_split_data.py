@@ -5,7 +5,7 @@ import urllib.parse
 # Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                      "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                     "DATABASE=NSEDATA;"
+                                     "DATABASE=nsedata;"
                                      "Trusted_Connection=yes")
 
 '''
@@ -23,8 +23,8 @@ engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 # Connect to the required SQL Server
 conn = engine.connect()
 
-split_data = conn.execute("select [Security Name],[Ex Date],[Purpose],[split_factor] from dbo.SPLIT_DATA").fetchall()
-bonus_data = conn.execute("select [Security Name],[Ex Date],[Purpose],[bonus_factor] from dbo.BONUS").fetchall()
+split_data = conn.execute("select [Security Name],[Ex Date],[Purpose],[split_factor] from public.SPLIT_DATA").fetchall()
+bonus_data = conn.execute("select [Security Name],[Ex Date],[Purpose],[bonus_factor] from public.BONUS").fetchall()
 
 # split_df = pd.read_sql(get_split_query, con=conn)
 

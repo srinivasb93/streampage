@@ -12,7 +12,7 @@ mf = Mftool()
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=MFDATA;"
+                                 "DATABASE=mfdata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -38,7 +38,7 @@ df.columns = ['Code','Scheme_Name']
 df.to_sql(name='MF_SCHEME_CODES',con=conn,if_exists='replace',index=False)
 """
 
-query = "SELECT * FROM dbo.MF_SCHEME_DETAILS "
+query = "SELECT * from public.MF_SCHEME_DETAILS "
 mf_data = conn.execute(query)
 mfunds = mf_data.fetchall()
 df = pd.DataFrame(mfunds,columns=['FundHouse','sch_type','sch_categoty','sch_code','sch_name','sch_start','sch_nav'])
@@ -55,12 +55,12 @@ for data in df.itertuples():
     fund_name = fund_name[0] + '_' + '_'.join(fund_name[-4:-1])
     fund_name = fund_name.replace('_&_','_') if '&' in fund_name else fund_name
     tbl_name = fund_name.upper()
-    query = 'select max(date) from dbo.'+tbl_name
+    query = 'select max(date) from public.'+tbl_name
     max_date = conn.execute(query)
     max_date = max_date.fetchall()[0][0]
     ext_date = max_date - dtm.timedelta(30)
 
-    get_data_query = "select * from dbo."+tbl_name+" where date > '{}'".format(ext_date)
+    get_data_query = "select * from public."+tbl_name+" where date > '{}'".format(ext_date)
     get_data = pd.read_sql(get_data_query,con=conn,parse_dates=True)
     df1 = pd.DataFrame()
     try:

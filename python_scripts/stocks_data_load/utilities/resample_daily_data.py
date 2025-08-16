@@ -2,7 +2,7 @@ import pandas as pd
 from common_utils import read_write_sql_data as rd
 
 # symbol = 'NIFTY_100'
-# get_query = f"select * from [NSEDATA].[dbo].{symbol} order by Date ASC"
+# get_query = f"select * from [nsedata].[dbo].{symbol} order by Date ASC"
 # df = rd.get_table_data(query=get_query)
 # df.set_index('Date', inplace=True, drop=True)
 # df.index = pd.to_datetime(df.index)

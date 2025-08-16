@@ -12,13 +12,13 @@ def extract_or_load_bhav_copy(for_date=dt.date.today(), reload=False):
     :param for_date: date for which bhavcopy is to be fetched. pass date for adhoc date's bhavcopy
     :return: bhavcopy data
     """
-    control_data = rd.get_table_data(selected_database="ANALYTICS", selected_table="ANALYTICS_LOAD_CONTROL")
+    control_data = rd.get_table_data(selected_database="analytics", selected_table="analytics_LOAD_CONTROL")
     bhav_last_updated = pd.to_datetime(control_data['BHAV_UPDATED_ON'].iloc[0]).date()
     if not reload:
         if bhav_last_updated == dt.date.today():
             msg = "Latest BHAV copy is already loaded for today's date : {}".format(bhav_last_updated)
             print(msg)
-            bhav_df = rd.get_table_data(selected_database="ANALYTICS", selected_table="BHAVCOPY")
+            bhav_df = rd.get_table_data(selected_database="analytics", selected_table="BHAVCOPY")
             return bhav_df
 
     if for_date != dt.date.today():
@@ -67,7 +67,7 @@ def extract_or_load_bhav_copy(for_date=dt.date.today(), reload=False):
     bhav_table = "BHAVCOPY_ADHOC" if for_date != dt.date.today() else "BHAVCOPY"
 
     try:
-        msg = rd.load_sql_data(bcopy, bhav_table, database="ANALYTICS")
+        msg = rd.load_sql_data(bcopy, bhav_table, database="analytics")
     except Exception as e:
         msg = "Bhavcopy data load failed due to {}".format(e)
     print(msg)
@@ -82,14 +82,14 @@ def extract_or_load_bhav_copy(for_date=dt.date.today(), reload=False):
         print("Bhav Index data extraction failed due to {}".format(e))
 
     try:
-        index_load_msg = rd.load_sql_data(bcopy_indices, 'BHAVCOPY_INDICES', database="ANALYTICS")
+        index_load_msg = rd.load_sql_data(bcopy_indices, 'BHAVCOPY_INDICES', database="analytics")
 
         if for_date == dt.date.today():
             bhav_load_state = 'SUCCESS' if "success" in msg else 'FAILED'
             control_data['BHAV_LOAD'] = bhav_load_state
             control_data['BHAV_DATE'] = pd.to_datetime(bcopy['Date'].max()).date()
             control_data['BHAV_UPDATED_ON'] = dt.datetime.now()
-            control_load_msg = rd.load_sql_data(control_data, "ANALYTICS_LOAD_CONTROL", database="ANALYTICS")
+            control_load_msg = rd.load_sql_data(control_data, "analytics_LOAD_CONTROL", database="analytics")
             print(control_load_msg)
     except Exception as e:
         index_load_msg = "Bhavcopy load of Index data failed due to {}".format(e)
@@ -133,7 +133,7 @@ def extract_or_load_index_bhav_copy(for_date=dt.date.today()):
         print("Bhav Index data extraction failed due to {}".format(e))
 
     try:
-        index_load_msg = rd.load_sql_data(bcopy_indices, 'BHAVCOPY_INDICES', database="ANALYTICS")
+        index_load_msg = rd.load_sql_data(bcopy_indices, 'BHAVCOPY_INDICES', database="analytics")
     except Exception as e:
         index_load_msg = "Bhavcopy load of Index data failed due to {}".format(e)
     print(index_load_msg)

@@ -20,7 +20,7 @@ class StockData:
             symbol += '_W'
         elif self.timeframe == 'M':
             symbol += '_M'
-        query = f"SELECT * FROM NSEDATA.dbo.{symbol} ORDER BY Date"
+        query = f"SELECT * FROM nsedata.public.{symbol} ORDER BY Date"
         return rd.get_table_data(query=query)
 
     def get_data_until(self, date):

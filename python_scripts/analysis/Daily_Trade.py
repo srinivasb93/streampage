@@ -9,7 +9,7 @@ import statsmodels.api as sm
 #Connect to SQL SERVER
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 dbEngine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 conn = dbEngine.connect()
@@ -54,7 +54,7 @@ def slope(ser, n):
 stock_list = ['HDFCBANK']
 for stock in stock_list:
     print(stock)
-    query = "SELECT * FROM dbo." + stock + " WHERE DATE >='2014-01-01 00:00:00.000' ORDER BY DATE ASC "
+    query = "SELECT * from public." + stock + " WHERE DATE >='2014-01-01 00:00:00.000' ORDER BY DATE ASC "
     data = pd.read_sql(query, con=conn, parse_dates=True)
 
     data['Close_Chg'] = round(data['Close'].pct_change()*100,2)

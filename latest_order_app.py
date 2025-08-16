@@ -48,7 +48,7 @@ ZERODHA_TOTP_TOKEN = os.getenv("ZERODHA_TOTP_TOKEN")
 ZERODHA_LOGIN_URL = "https://kite.zerodha.com/api/login"
 ZERODHA_TWOFA_URL = "https://kite.zerodha.com/api/twofa"
 
-DATABASE = "NSEDATA"
+DATABASE = "nsedata"
 
 st.set_page_config(page_title="Stock Trading Dashboard", layout="wide")
 st.markdown("""
@@ -159,7 +159,7 @@ class ThreadManager:
     def _get_pending_orders(self):
         """Fetch pending orders from the database."""
         query = text("""
-            SELECT OrderID, Status, Broker FROM NSEDATA.dbo.Orders 
+            SELECT OrderID, Status, Broker FROM nsedata.public.Orders 
             WHERE Status NOT IN ('success', 'complete', 'rejected', 'cancelled', 'cancelled after market order', 'cancelled amo')
         """)
         try:
@@ -172,7 +172,7 @@ class ThreadManager:
     def _update_order_status(self, order_id, status, broker):
         """Update order status in the database with thread safety."""
         query = text("""
-            UPDATE NSEDATA.dbo.Orders 
+            UPDATE nsedata.public.Orders 
             SET Status = :status 
             WHERE OrderID = :order_id AND Broker = :broker
         """)
@@ -314,7 +314,7 @@ class OrderManager:
     def _load_scheduled_orders(self):
         """Load pending scheduled orders from the database."""
         query = text("""
-            SELECT * FROM NSEDATA.dbo.ScheduledOrders 
+            SELECT * FROM nsedata.public.ScheduledOrders 
             WHERE Status = 'PENDING' AND Broker = :broker
         """)
         try:
@@ -360,7 +360,7 @@ class OrderManager:
     def _update_scheduled_order_status(self, order_id, status):
         """Update the status of a scheduled order."""
         query = text("""
-            UPDATE NSEDATA.dbo.ScheduledOrders 
+            UPDATE nsedata.public.ScheduledOrders 
             SET Status = :status 
             WHERE ScheduledOrderID = :order_id AND Broker = :broker
         """)
@@ -554,7 +554,7 @@ class OrderManager:
 
         if updates:
             query = text(
-                f"UPDATE NSEDATA.dbo.ScheduledOrders SET {', '.join(updates)} WHERE ScheduledOrderID = :order_id AND Broker = :broker")
+                f"UPDATE nsedata.public.ScheduledOrders SET {', '.join(updates)} WHERE ScheduledOrderID = :order_id AND Broker = :broker")
             try:
                 with self.lock:
                     with engine.connect() as conn:
@@ -573,7 +573,7 @@ class OrderManager:
                 self.scheduled_order_queue.get()
             self._load_scheduled_orders()
             logger.info(f"Recovered {self.scheduled_order_queue.qsize()} pending scheduled orders for {self.broker}")
-            query = text("SELECT * FROM NSEDATA.dbo.AutoOrders WHERE Broker = :broker")
+            query = text("SELECT * FROM nsedata.public.AutoOrders WHERE Broker = :broker")
             try:
                 with engine.connect() as conn:
                     auto_orders_df = pd.read_sql(query, conn, params={"broker": self.broker})
@@ -1530,7 +1530,7 @@ elif page == "Order Book":
                                                             step=0.5, key="auto_target_atr")
 
         backtest_data = get_table_data(selected_database=DATABASE, selected_table="BacktestResults",
-                                      query=f"SELECT * FROM NSEDATA.dbo.BacktestResults WHERE "
+                                      query=f"SELECT * FROM nsedata.public.BacktestResults WHERE "
                                             f"InstrumentToken = '{auto_instrument_token}' ORDER BY BacktestDate DESC")
         if not backtest_data.empty:
             latest_backtest = backtest_data.iloc[0]
@@ -1629,7 +1629,7 @@ elif page == "Order Book":
                 with col_mod:
                     if st.button("Modify Auto Order"):
                         update_query = f"""
-                            UPDATE NSEDATA.dbo.AutoOrders
+                            UPDATE nsedata.public.AutoOrders
                             SET TransactionType = '{mod_transaction_type}',
                                 OrderType = '{mod_order_type}',
                                 ProductType = '{mod_product_type}',
@@ -1652,7 +1652,7 @@ elif page == "Order Book":
 
                 with col_del:
                     if st.button("Delete Auto Order"):
-                        delete_query = text("DELETE FROM NSEDATA.dbo.AutoOrders WHERE AutoOrderID = :id")
+                        delete_query = text("DELETE FROM nsedata.public.AutoOrders WHERE AutoOrderID = :id")
                         with create_connection(DATABASE).connect() as conn:
                             conn.execute(delete_query, {"id": selected_auto_order_id})
                             conn.commit()
@@ -1739,7 +1739,7 @@ elif page == "Trade Dashboard":
     # Recent Trades
     st.write("##### Recent Trades")
     recent_trades = get_table_data(selected_database=DATABASE, selected_table="TradeHistory",
-                                   query="SELECT TOP 10 * FROM NSEDATA.dbo.TradeHistory ORDER BY ExitTime DESC")
+                                   query="SELECT TOP 10 * FROM nsedata.public.TradeHistory ORDER BY ExitTime DESC")
     if not recent_trades.empty:
         st.dataframe(recent_trades)
         total_realized_pnl = recent_trades["Pnl"].sum()
@@ -1754,7 +1754,7 @@ elif page == "Trade Dashboard":
     # P&L Chart
     st.write("##### P&L Trend")
     all_trades = get_table_data(selected_database=DATABASE, selected_table="TradeHistory",
-                                query="SELECT ExitTime, Pnl FROM NSEDATA.dbo.TradeHistory ORDER BY ExitTime")
+                                query="SELECT ExitTime, Pnl FROM nsedata.public.TradeHistory ORDER BY ExitTime")
     if not all_trades.empty:
         chart = alt.Chart(all_trades).mark_line().encode(
             x="ExitTime:T",
@@ -2040,7 +2040,7 @@ elif page == "Strategy Backtest":
                 optimized_results = {}
                 date_lists = {}
                 for stock in selected_stocks:
-                    query = f"Select * from dbo.{stock} where date between '{start_date} 00:00:00.000' and '{end_date} 00:00:00.000' order by Date ASC"
+                    query = f"Select * from public.{stock} where date between '{start_date} 00:00:00.000' and '{end_date} 00:00:00.000' order by Date ASC"
                     data = get_table_data(query=query)
                     if not data.empty:
                         df = pd.DataFrame(data)

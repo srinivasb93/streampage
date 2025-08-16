@@ -166,7 +166,7 @@ def optimize_parameters(data, stock_name, initial_investment_range, stop_loss_at
 #
 # # Optimize parameters for each stock
 # for stock in stocks:
-#     query = f"Select * from dbo.{stock} where date between '2020-01-01 00:00:00.000' and '2026-01-01 00:00:00.000' order by Date ASC"
+#     query = f"Select * from public.{stock} where date between '2020-01-01 00:00:00.000' and '2026-01-01 00:00:00.000' order by Date ASC"
 #     data = rd.get_table_data(query=query)
 #     optimized_results[stock] = optimize_parameters(data, stock, initial_investment_range, stop_loss_range, target_range)
 #

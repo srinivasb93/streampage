@@ -70,9 +70,9 @@ class StockAnalyzer:
     def _fetch_data(self, stock):
         stock_clean = stock.replace('&', '').replace('-', '')
         if self.analysis_period == 'by_date':
-            query = f"SELECT * FROM dbo.{stock_clean} WHERE DATE BETWEEN '{self.start_date}' AND '{self.end_date}' ORDER BY DATE ASC"
+            query = f"SELECT * from public.{stock_clean} WHERE DATE BETWEEN '{self.start_date}' AND '{self.end_date}' ORDER BY DATE ASC"
         else:
-            query = f"SELECT TOP {self.analysis_days} * FROM dbo.{stock_clean} ORDER BY DATE DESC"
+            query = f"SELECT TOP {self.analysis_days} * from public.{stock_clean} ORDER BY DATE DESC"
         data = rd.get_table_data(query=query)
         data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m-%d')
         if self.analysis_period != 'by_date':

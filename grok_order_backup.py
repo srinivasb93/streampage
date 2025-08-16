@@ -42,7 +42,7 @@ ZERODHA_TOTP_TOKEN = os.getenv("ZERODHA_TOTP_TOKEN")
 ZERODHA_LOGIN_URL = "https://kite.zerodha.com/api/login"
 ZERODHA_TWOFA_URL = "https://kite.zerodha.com/api/twofa"
 
-DATABASE = "NSEDATA"
+DATABASE = "nsedata"
 
 st.set_page_config(page_title="Stock Trading Dashboard", layout="wide")
 st.markdown("""
@@ -163,7 +163,7 @@ def manage_scheduled_orders():
     scheduled_orders_df = get_table_data(
         selected_database=DATABASE,
         selected_table="ScheduledOrders",
-        query=f"SELECT * FROM NSEDATA.dbo.ScheduledOrders WHERE Status = 'PENDING' AND Broker = '{broker}'"
+        query=f"SELECT * FROM nsedata.public.ScheduledOrders WHERE Status = 'PENDING' AND Broker = '{broker}'"
     )
     scheduled_orders = scheduled_orders_df.to_dict('records') if not scheduled_orders_df.empty else []
     for order in scheduled_orders:
@@ -220,7 +220,7 @@ def recover_session_state():
     auto_orders_df = get_table_data(
         selected_database=DATABASE,
         selected_table="AutoOrders",
-        query=f"SELECT * FROM NSEDATA.dbo.AutoOrders WHERE Broker = '{broker}'"
+        query=f"SELECT * FROM nsedata.public.AutoOrders WHERE Broker = '{broker}'"
     )
     if not auto_orders_df.empty:
         st.session_state["auto_orders"] = auto_orders_df.to_dict('records')
@@ -262,7 +262,7 @@ def sync_order_statuses(api, broker):
         orders_df = get_table_data(
             selected_database=DATABASE,
             selected_table="Orders",
-            query=f"SELECT OrderID, Status FROM NSEDATA.dbo.Orders WHERE Status NOT IN "
+            query=f"SELECT OrderID, Status FROM nsedata.public.Orders WHERE Status NOT IN "
                   f"('success', 'complete', 'rejected', 'cancelled', 'cancelled after market order') AND Broker = '{broker}'"
         )
         for _, row in orders_df.iterrows():
@@ -735,7 +735,7 @@ def get_portfolio(upstox_api, zerodha_api):
 
 
 def update_order_status(order_id, status, broker):
-    query = f"UPDATE NSEDATA.dbo.Orders SET Status = '{status}' WHERE OrderID = '{order_id}' AND Broker = '{broker}'"
+    query = f"UPDATE nsedata.public.Orders SET Status = '{status}' WHERE OrderID = '{order_id}' AND Broker = '{broker}'"
     with create_connection(DATABASE).connect() as conn:
         conn.execute(text(query))
         conn.commit()
@@ -767,7 +767,7 @@ def update_scheduled_order(order_id, new_quantity=None, new_price=None, new_trig
         updates.append("Status = :status")
         params["status"] = status
     if updates:
-        query = text(f"UPDATE NSEDATA.dbo.ScheduledOrders SET {', '.join(updates)} WHERE ScheduledOrderID = :order_id AND Broker = :broker")
+        query = text(f"UPDATE nsedata.public.ScheduledOrders SET {', '.join(updates)} WHERE ScheduledOrderID = :order_id AND Broker = :broker")
         try:
             with create_connection(DATABASE).connect() as conn:
                 conn.execute(query, params)
@@ -1454,7 +1454,7 @@ elif page == "Order Book":
                         st.success("Scheduled order updated")
                 with col_can:
                     if st.button("Cancel Scheduled Order"):
-                        query = f"UPDATE NSEDATA.dbo.ScheduledOrders SET Status = 'cancelled' WHERE ScheduledOrderID = '{selected_scheduled_order}'"
+                        query = f"UPDATE nsedata.public.ScheduledOrders SET Status = 'cancelled' WHERE ScheduledOrderID = '{selected_scheduled_order}'"
                         with create_connection(DATABASE).connect() as conn:
                             conn.execute(text(query))
                             conn.commit()
@@ -1504,7 +1504,7 @@ elif page == "Order Book":
                                                             step=0.5, key="auto_target_atr")
 
         backtest_data = get_table_data(selected_database=DATABASE, selected_table="BacktestResults",
-                                      query=f"SELECT * FROM NSEDATA.dbo.BacktestResults WHERE "
+                                      query=f"SELECT * FROM nsedata.public.BacktestResults WHERE "
                                             f"InstrumentToken = '{auto_instrument_token}' ORDER BY BacktestDate DESC")
         if not backtest_data.empty:
             latest_backtest = backtest_data.iloc[0]
@@ -1603,7 +1603,7 @@ elif page == "Order Book":
                 with col_mod:
                     if st.button("Modify Auto Order"):
                         update_query = f"""
-                            UPDATE NSEDATA.dbo.AutoOrders
+                            UPDATE nsedata.public.AutoOrders
                             SET TransactionType = '{mod_transaction_type}',
                                 OrderType = '{mod_order_type}',
                                 ProductType = '{mod_product_type}',
@@ -1626,7 +1626,7 @@ elif page == "Order Book":
 
                 with col_del:
                     if st.button("Delete Auto Order"):
-                        delete_query = text("DELETE FROM NSEDATA.dbo.AutoOrders WHERE AutoOrderID = :id")
+                        delete_query = text("DELETE FROM nsedata.public.AutoOrders WHERE AutoOrderID = :id")
                         with create_connection(DATABASE).connect() as conn:
                             conn.execute(delete_query, {"id": selected_auto_order_id})
                             conn.commit()
@@ -1731,7 +1731,7 @@ elif page == "Trade Dashboard":
     # Recent Trades
     st.write("##### Recent Trades")
     recent_trades = get_table_data(selected_database=DATABASE, selected_table="TradeHistory",
-                                   query="SELECT TOP 10 * FROM NSEDATA.dbo.TradeHistory ORDER BY ExitTime DESC")
+                                   query="SELECT TOP 10 * FROM nsedata.public.TradeHistory ORDER BY ExitTime DESC")
     if not recent_trades.empty:
         st.dataframe(recent_trades)
         total_realized_pnl = recent_trades["Pnl"].sum()
@@ -1746,7 +1746,7 @@ elif page == "Trade Dashboard":
     # P&L Chart
     st.write("##### P&L Trend")
     all_trades = get_table_data(selected_database=DATABASE, selected_table="TradeHistory",
-                                query="SELECT ExitTime, Pnl FROM NSEDATA.dbo.TradeHistory ORDER BY ExitTime")
+                                query="SELECT ExitTime, Pnl FROM nsedata.public.TradeHistory ORDER BY ExitTime")
     if not all_trades.empty:
         chart = alt.Chart(all_trades).mark_line().encode(
             x="ExitTime:T",
@@ -2032,7 +2032,7 @@ elif page == "Strategy Backtest":
                 optimized_results = {}
                 date_lists = {}
                 for stock in selected_stocks:
-                    query = f"Select * from dbo.{stock} where date between '{start_date} 00:00:00.000' and '{end_date} 00:00:00.000' order by Date ASC"
+                    query = f"Select * from public.{stock} where date between '{start_date} 00:00:00.000' and '{end_date} 00:00:00.000' order by Date ASC"
                     data = get_table_data(query=query)
                     if not data.empty:
                         df = pd.DataFrame(data)

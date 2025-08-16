@@ -35,7 +35,7 @@ end_date = pd.Timestamp(dt.date.today() - dt.timedelta(1))
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -154,7 +154,7 @@ for stock in stocks:
     if '&' in stock or '-' in stock:
         stock = stock.replace('&', '').replace('-', '')
 
-    query = "SELECT * FROM dbo." + stock + " WHERE DATE >='2014-01-01 00:00:00.000' ORDER BY DATE ASC"
+    query = "SELECT * from public." + stock + " WHERE DATE >='2014-01-01 00:00:00.000' ORDER BY DATE ASC"
     df = pd.read_sql(query,con=conn,parse_dates=True)
     df['Date'] = pd.to_datetime(df['Date'])
     # df = df[(start_date <= df['Date']) & (df['Date']<= end_date)]

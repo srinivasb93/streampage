@@ -9,7 +9,7 @@ import pandas as pd
 # Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=MFDATA;"
+                                 "DATABASE=mfdata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -38,7 +38,7 @@ df.columns = ['Code','Scheme_Name']
 df.to_sql(name='MF_SCHEME_CODES',con=conn,if_exists='replace',index=False)
 """
 
-# query = "SELECT code FROM dbo.MF_SCHEME_CODES where CheckIt='Y' "
+# query = "SELECT code from public.MF_SCHEME_CODES where CheckIt='Y' "
 # mf_data = conn.execute(query)
 # mfunds = mf_data.fetchall()
 df_all = pd.DataFrame()

@@ -31,7 +31,7 @@ class RsiOscillator(TrailingStrategy):
             if crossover(self.rsi, self.lower_bound):
                 self.buy()
 
-bt = Backtest(GOOG, RsiOscillator, cash = 10_000, commission=0.002)
+bt = Backtest(GOOG, RsiOscillator, cash = 100000, commission=0.002)
 
 stats = bt.run(
         rsi_window = 14,

@@ -44,9 +44,9 @@ class WeeklyAnalysis:
     def get_query(self, stock):
         stk_suffix = '_W' if self.analysis == 'Weekly' else '_M'
         if self.analysis_period == 'by_date':
-            return f"SELECT * FROM dbo.{stock}{stk_suffix} WHERE DATE BETWEEN '{self.analysis_start_date}' AND '{self.analysis_end_date}' ORDER BY DATE ASC"
+            return f"SELECT * from public.{stock}{stk_suffix} WHERE DATE BETWEEN '{self.analysis_start_date}' AND '{self.analysis_end_date}' ORDER BY DATE ASC"
         else:
-            return f"SELECT top {self.analysis_days} * FROM dbo.{stock}{stk_suffix} ORDER BY DATE DESC"
+            return f"SELECT top {self.analysis_days} * from public.{stock}{stk_suffix} ORDER BY DATE DESC"
 
     def preprocess_data(self, data, stock):
         data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m-%d')

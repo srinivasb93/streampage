@@ -35,7 +35,7 @@ st.markdown("""
 
 
 def fetch_stock_data(stock_symbol, start_dt, end_dt):
-    query = f"select * from NSEDATA.dbo.{stock_symbol} where Date between '{start_dt}' and '{end_dt}' order by Date"
+    query = f"select * from nsedata.public.{stock_symbol} where Date between '{start_dt}' and '{end_dt}' order by Date"
     df = rd.get_table_data(query=query)
     df.set_index("Date", inplace=True)
     # df.sort_index(inplace=True)

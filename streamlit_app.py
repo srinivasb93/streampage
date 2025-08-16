@@ -1,31 +1,56 @@
 import streamlit as st
-from dataload import dataload
-from trading import trading
-# from screener import screener
-from market_snapshot import market_snapshot
-from strategy_tester import strategy_tester
+
+# Set the page configuration. This should be the first Streamlit command.
+st.set_page_config(page_title="Analytics Dashboard",
+                   page_icon=":money_bag:",
+                   layout="wide",
+                   initial_sidebar_state="expanded")
 
 
-# Title of the application
-st.set_page_config(page_title="Analytics dashboard",
-                    page_icon=":money_bag:",
-                    layout="wide",
-                    initial_sidebar_state="expanded")
+@st.cache_data
+def load_css(file_name: str) -> str:
+    """A simple function to load and cache CSS content."""
+    with open(file_name) as f:
+        return f.read()
 
-with open('styles.css') as f:
-    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
+# Apply CSS styles
+css = load_css('styles.css')
+st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
 st.markdown('<style>div.block-container{padding-top:2rem;padding-right:0rem;}</style>', unsafe_allow_html=True)
 
-portfolio = st.Page('portfolio.py', title='Portfolio Summary', icon=':material/dashboard:')
-analysis = st.Page("stock_analysis.py", title='Stock Analysis', icon=':material/dashboard:')
-dataload = st.Page(dataload, title='Data Load/View', icon=':material/dashboard:')
-snapshot = st.Page(market_snapshot, title="Market Snapshot", icon=':material/dashboard:')
-# screener = st.Page('screener.py', title="Screener", icon=':material/dashboard:')
-trading = st.Page(trading, title="Stock Screener", icon=':material/monitoring:')
-strategy = st.Page(strategy_tester, title="Strategy Tester", icon=':material/monitoring:')
+# --- Main Home Page Content ---
 
-# pg = st.navigation([portfolio, analysis, dataload, snapshot, screener, trading])
-pg = st.navigation([portfolio, analysis, dataload, snapshot, trading, strategy])
+st.title("Financial Analytics Dashboard")
 
-pg.run()
+st.markdown("""
+This application is a comprehensive suite of tools for financial market analysis, portfolio tracking, and strategy backtesting.
+
+**Navigate through the different modules using the sidebar on the left.**
+""")
+
+st.info("Select a page from the navigation bar to get started.", icon="👈")
+
+st.subheader("Key Features")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("""
+    - **Portfolio Summary**: Get an overall view of your Equity and MF holdings.
+    - **Stock Analysis**: Perform in-depth technical analysis on individual stocks.
+    """)
+
+with col2:
+    st.markdown("""
+    - **Stock Screener**: Filter stocks based on technical criteria to find opportunities.
+    - **Market Snapshot**: Get a pulse of the market with summaries of indices and sectors.
+    """)
+
+with col3:
+    st.markdown("""
+    - **Strategy Tester**: Backtest systematic investment strategies on historical data.
+    - **Data Load/View**: Manage and view the underlying financial data.
+    """)
+
+st.sidebar.success("Select a page above to begin.")

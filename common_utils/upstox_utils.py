@@ -4,22 +4,23 @@ from datetime import datetime, timedelta
 import logging
 import requests
 import os
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", force=True)
 logger = logging.getLogger(__name__)
 
-DATABASE = 'NSEDATA'
+DATABASE = 'nsedata'
 
 
-def get_historical_data(instrument_token, timeframe="days", sort_data=True):
+def get_historical_data(instrument_token, interval="days", unit="1", sort_data=True, start_date=None, end_date=None):
     try:
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=3650)).strftime("%Y-%m-%d")
+        if not start_date and not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=3650)).strftime("%Y-%m-%d")
         headers = {"Authorization": f"Bearer {os.getenv('UPSTOX_ACCESS_TOKEN')}"}
-        url = f"https://api.upstox.com/v3/historical-candle/{instrument_token}/{timeframe}/1/{end_date}/{start_date}"
+        url = f"https://api.upstox.com/v3/historical-candle/{instrument_token}/{interval}/{unit}/{end_date}/{start_date}"
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             data = response.json().get("data", []).get("candles", [])
@@ -147,4 +148,4 @@ def calculate_brokerage(api, instrument_token, quantity, price, transaction_type
 if __name__ == '__main__':
     # Example usage
     print(get_historical_data(instrument_token='NSE_EQ|INE051B01021'))
-    # print(fetch_instruments())
+    print(fetch_instruments())

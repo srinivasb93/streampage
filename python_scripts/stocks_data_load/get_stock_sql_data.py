@@ -13,7 +13,7 @@ stock = 'TATAMOTORS'
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 
@@ -21,7 +21,7 @@ params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
 #Use this for SQL server authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "UID=user;"
                                  "PWD=password")
 """
@@ -36,14 +36,14 @@ conn=engine.connect()
 # start_dt = date_today - dt.timedelta(1825)
 # start_dt = start_dt.strftime(format='%Y-%m-%d')
 
-query = "SELECT SYMBOL FROM dbo.ALL_STOCKS"
+query = "SELECT SYMBOL from public.ALL_STOCKS"
 stocks_data = conn.execute(query)
 stocks = stocks_data.fetchall()
 stock_list = [stock[0] for stock in stocks]
 # stock_list = ['TATAMOTORS']
 
 for stock in stock_list:
-    query_get_data = "select * from dbo." + stock + " where DATE >= '" + str(start_dt) +"' ORDER BY DATE ASC"
+    query_get_data = "select * from public." + stock + " where DATE >= '" + str(start_dt) +"' ORDER BY DATE ASC"
     data = pd.read_sql_query(query_get_data, con=conn, parse_dates=True)
     # data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%m/%d/%Y')
     # data['Symbol'] = stock

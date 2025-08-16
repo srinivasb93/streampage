@@ -24,7 +24,7 @@ actions: Download stock dividends and stock splits events? (Default is True)
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -88,7 +88,7 @@ for stock in stocks:
         stock = 'LTFH'
     if stock == 'M&MFIN':
         stock = 'MMFIN'
-    query = "SELECT * FROM dbo." + stock + " WHERE DATE >='2014-01-01 00:00:00.000'"
+    query = "SELECT * from public." + stock + " WHERE DATE >='2014-01-01 00:00:00.000'"
     df = pd.read_sql(query, con=conn, parse_dates=True)
     df['Date'] = pd.to_datetime(df['Date'])
     df['Close_change'] = df['Close'].pct_change()

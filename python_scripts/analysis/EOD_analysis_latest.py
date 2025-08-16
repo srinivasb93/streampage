@@ -79,10 +79,10 @@ def eod_data_analysis(stocks_list, adhoc_date=None, analysis_days=365, analysis_
         print(f"Processing data for the stock - {stock}")
 
         if analysis_period == 'by_date':
-            query = f"SELECT * FROM dbo.{stock} WHERE DATE" \
+            query = f"SELECT * from public.{stock} WHERE DATE" \
                     f" BETWEEN '{analysis_start_date}' AND '{analysis_end_date}' ORDER BY DATE ASC"
         else:
-            query = f"SELECT top {analysis_days} * FROM dbo." + stock + " ORDER BY DATE DESC"
+            query = f"SELECT top {analysis_days} * from public." + stock + " ORDER BY DATE DESC"
         data = rd.get_table_data(query=query)
         data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m-%d')
         if analysis_period != 'by_date':

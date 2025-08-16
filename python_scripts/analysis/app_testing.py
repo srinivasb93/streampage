@@ -9,7 +9,7 @@ import urllib
 # Example: 'mssql+pyodbc://username:password@your_server/your_database'
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                      "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                     "DATABASE=NSEDATA;"
+                                     "DATABASE=nsedata;"
                                      "Trusted_Connection=yes")
 db_url = "mssql+pyodbc:///?odbc_connect={}".format(params)
 engine = create_engine(db_url)

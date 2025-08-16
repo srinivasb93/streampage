@@ -10,7 +10,7 @@ import urllib
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=MFDATA;"
+                                 "DATABASE=mfdata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -29,7 +29,7 @@ engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 conn=engine.connect()
 
 #Query to fetch all mutual fund table names
-query = "SELECT mf_name FROM dbo.MUTUAL_FUNDS"
+query = "SELECT mf_name from public.MUTUAL_FUNDS"
 mfs_data = conn.execute(query)
 mf_funds = mfs_data.fetchall()
 
@@ -194,7 +194,7 @@ def calculate_returns_daywise(in_data,day):
 for mf in mf_funds:
     # if mf[0]!='ADITYA_PSU_DEBT':
     #     continue
-    query = "SELECT * FROM dbo." + mf[0] + " ORDER BY DATE ASC "
+    query = "SELECT * from public." + mf[0] + " ORDER BY DATE ASC "
     data = pd.read_sql_query(query, con=conn, parse_dates=True)
     data['date'] = pd.to_datetime(data['date'])
     # data['date'] = pd.to_datetime(data['date']).dt.strftime('%m/%d/%Y')

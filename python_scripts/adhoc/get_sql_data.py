@@ -14,7 +14,7 @@ stock = 'MOTHERSUMI'
 #Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -32,7 +32,7 @@ engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 # Connect to the required SQL Server
 conn=engine.connect()
 
-query = "SELECT * FROM dbo." + stock + " ORDER BY DATE ASC "
+query = "SELECT * from public." + stock + " ORDER BY DATE ASC "
 data = pd.read_sql_query(query, con=conn, parse_dates=True)
 data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%m/%d/%Y')
 data['Symbol'] = stock

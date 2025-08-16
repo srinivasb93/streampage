@@ -36,7 +36,7 @@ def adj_close(data, stock):
 # Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -54,20 +54,20 @@ engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 # Connect to the required SQL Server
 conn = engine.connect()
 
-query_split = "SELECT * FROM dbo.SPLIT_BONUS_DATA"
-# query_split = "SELECT * FROM DBO.STOCK_SPLIT_DATA WHERE STOCK_INDEX = 'NIFTY 50'"
+query_split = "SELECT * from public.SPLIT_BONUS_DATA"
+# query_split = "SELECT * from public.STOCK_SPLIT_DATA WHERE STOCK_INDEX = 'NIFTY 50'"
 split_df = pd.read_sql(query_split, con=conn, parse_dates=True)
 
-query_stocks = """select SYMBOL from [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 200'
+query_stocks = """select SYMBOL from [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 200'
 except
 (
-SELECT  [SYMBOL]  FROM [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 50'
+SELECT  [SYMBOL]  FROM [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 50'
 union
-SELECT  [SYMBOL]  FROM [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY NEXT 50'
+SELECT  [SYMBOL]  FROM [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY NEXT 50'
 union
-SELECT  [SYMBOL]  FROM [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY MIDCAP 50'
+SELECT  [SYMBOL]  FROM [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY MIDCAP 50'
 )"""
-# query = "SELECT SYMBOL FROM DBO.ALL_STOCKS WHERE STK_INDEX = 'NIFTY 50'"
+# query = "SELECT SYMBOL from public.ALL_STOCKS WHERE STK_INDEX = 'NIFTY 50'"
 stocks_df = pd.read_sql(query_stocks, con=conn)
 stocks = stocks_df['SYMBOL'].tolist()
 stocks = ['MAFANG']

@@ -11,7 +11,7 @@ def get_bar_data(chart, mode='selection', fetch_data=False, need_drawings=False)
     if timeframe == 'Monthly':
         symbol = symbol + '_M'
 
-    query = f"select * from NSEDATA.dbo.{symbol} order by Date"
+    query = f"select * from nsedata.public.{symbol} order by Date"
     stock_data = rd.get_table_data(query=query)
     if fetch_data:
         return stock_data

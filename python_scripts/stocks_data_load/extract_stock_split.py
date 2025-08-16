@@ -7,7 +7,7 @@ import urllib.parse
 # Use this for windows authentication
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 
 '''
@@ -25,14 +25,14 @@ engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 # Connect to the required SQL Server
 conn = engine.connect()
 
-query_stock_names = """select SYMBOL from [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 200'
+query_stock_names = """select SYMBOL from [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 200'
 except
 (
-SELECT  [SYMBOL]  FROM [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 50'
+SELECT  [SYMBOL]  FROM [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 50'
 union
-SELECT  [SYMBOL]  FROM [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY NEXT 50'
+SELECT  [SYMBOL]  FROM [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY NEXT 50'
 union
-SELECT  [SYMBOL]  FROM [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY MIDCAP 50'
+SELECT  [SYMBOL]  FROM [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY MIDCAP 50'
 )"""
 # query_stock_names = "SELECT SYMBOL  FROM [dbo].[ALL_STOCKS] WHERE STK_INDEX = 'NIFTY 50'"
 all_data = pd.read_sql(query_stock_names, con=conn)

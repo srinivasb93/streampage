@@ -11,7 +11,7 @@ def fetch_data_from_db(table_name, start_date, end_date):
     Placeholder function to fetch data from the database.
     Replace this with your actual function to fetch data.
     """
-    query = f"SELECT * FROM {table_name} WHERE date BETWEEN '{start_date}' AND '{end_date}'"
+    query = f"SELECT * FROM \"{table_name}\" WHERE timestamp BETWEEN '{start_date}' AND '{end_date}'"
     data = rd.get_table_data(query=query)
     return data
 
@@ -20,7 +20,7 @@ def calculate_recent_high(data, window):
     """
     Calculate the recent high for the given window.
     """
-    data['recent_high'] = data['Close'].rolling(window=window).max()
+    data['recent_high'] = data['close'].rolling(window=window).max()
     return data
 
 
@@ -29,7 +29,7 @@ def generate_signals(data, down_percent):
     Generate buy signals based on the strategy.
     """
     data['signal'] = 0
-    data.loc[data['Close'] <= (1 - down_percent / 100) * data['recent_high'], 'signal'] = 1
+    data.loc[data['close'] <= (1 - down_percent / 100) * data['recent_high'], 'signal'] = 1
     return data
 
 
@@ -37,8 +37,8 @@ def limit_signals_per_month(data, max_signals_per_month=2):
     """
     Limit the number of buy signals to a maximum of `max_signals_per_month` per month.
     """
-    data['year'] = data['Date'].dt.year
-    data['month'] = data['Date'].dt.month
+    data['year'] = data['timestamp'].dt.year
+    data['month'] = data['timestamp'].dt.month
 
     # Group by year and month, and limit the number of signals
     def limit_group(group):
@@ -69,10 +69,10 @@ def backtest_strategy(index_data, etf_data, window, down_percent, fixed_investme
     index_data = limit_signals_per_month(index_data, max_signals_per_month=5)
 
     # Merge index signals with ETF data
-    merged_data = pd.merge(index_data[['Date', 'signal']], etf_data, on='Date', how='left')
+    merged_data = pd.merge(index_data[['timestamp', 'signal']], etf_data, on='timestamp', how='left')
 
     # Calculate returns based on signals
-    merged_data['etf_return'] = merged_data['Close'].pct_change()
+    merged_data['etf_return'] = merged_data['close'].pct_change()
     merged_data['strategy_return'] = merged_data['signal'].shift(1) * merged_data['etf_return']
 
     # Calculate cumulative returns with fixed investment
@@ -82,19 +82,19 @@ def backtest_strategy(index_data, etf_data, window, down_percent, fixed_investme
         'cumulative_investment']
 
     # Calculate CAGR for the strategy
-    start_date = merged_data['Date'].min()
-    end_date = merged_data['Date'].max()
+    start_date = merged_data['timestamp'].min()
+    end_date = merged_data['timestamp'].max()
     num_years = (end_date - start_date).days / 365.25
     strategy_cagr = (merged_data['portfolio_value'].iloc[-1] / merged_data['cumulative_investment'].iloc[-1]) ** (
                 1 / num_years) - 1
 
     # Calculate Buy & Hold Return and CAGR
-    buy_hold_return = (merged_data['Close'].iloc[-1] / merged_data['Close'].iloc[0]) - 1
-    buy_hold_cagr = (merged_data['Close'].iloc[-1] / merged_data['Close'].iloc[0]) ** (1 / num_years) - 1
+    buy_hold_return = (merged_data['close'].iloc[-1] / merged_data['close'].iloc[0]) - 1
+    buy_hold_cagr = (merged_data['close'].iloc[-1] / merged_data['close'].iloc[0]) ** (1 / num_years) - 1
 
     # Summary of buy signals, monthly and yearly investments
-    merged_data['year'] = merged_data['Date'].dt.year
-    merged_data['month'] = merged_data['Date'].dt.month
+    merged_data['year'] = merged_data['timestamp'].dt.year
+    merged_data['month'] = merged_data['timestamp'].dt.month
     monthly_investment = merged_data.groupby(['year', 'month'])['investment'].sum().reset_index()
     yearly_investment = merged_data.groupby('year')['investment'].sum().reset_index()
     total_buy_signals = merged_data['signal'].sum()
@@ -153,8 +153,8 @@ def main():
     etf_data = fetch_data_from_db(stock_name, start_date, end_date)
 
     # Convert date columns to datetime
-    index_data['Date'] = pd.to_datetime(index_data['Date'])
-    etf_data['Date'] = pd.to_datetime(etf_data['Date'])
+    index_data['timestamp'] = pd.to_datetime(index_data['timestamp'])
+    etf_data['timestamp'] = pd.to_datetime(etf_data['timestamp'])
 
     # Find the best strategy
     results_df, best_by_cagr = find_best_strategy(index_data, etf_data, window_range, down_percent_range,

@@ -47,7 +47,7 @@ class Dataload:
         if data_type == 'Stock':
             log.info("Fetching Stock names from SQL")
             stocks_in_db = rd.get_table_data(selected_table='STOCKS_IN_DB')
-            my_holdings = rd.get_table_data(selected_database='ANALYTICS', selected_table='EQUITY_HOLDINGS')
+            my_holdings = rd.get_table_data(selected_database='analytics', selected_table='EQUITY_HOLDINGS')
             stocks = list(set(stocks_in_db['SYMBOL'].values.tolist() + my_holdings['Stock_Symbol'].values.tolist()))
         else:
             log.info("Fetching Index/Sector names from SQL")
@@ -66,7 +66,7 @@ class Dataload:
             bhav_table = 'BHAVCOPY_INDICES'
 
         # Extract stock/index bhavcopy data into a dataframe
-        bhav_query = "SELECT * FROM NSEDATA.dbo." + bhav_table
+        bhav_query = "SELECT * FROM nsedata.public." + bhav_table
         # data = pd.read_sql_query(bhav_query, con=self.conn, parse_dates=True)
         data = rd.get_table_data(query=bhav_query)
         # Extract data of required columns from BHAVCOPY data as in the SQL tables format
@@ -173,7 +173,7 @@ class Dataload:
         if stock == 'Nifty Financial Services':
             stock = 'NIFTY_FIN_SERVICE'
         # Extract maximum date for until which data is present in SQL for a stock
-        query_max_date = "SELECT max(DATE) FROM dbo." + stock
+        query_max_date = "SELECT max(DATE) from public." + stock
         start_date = rd.get_table_data(query=query_max_date)
         start_dt = start_date.loc[0][0]
         start_dt = pd.to_datetime(start_dt).date()

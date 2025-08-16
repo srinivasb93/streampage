@@ -18,10 +18,10 @@ def extract_and_load_latest_mf_hist_data():
     """
     mf = Mftool()
 
-    mfunds_df = rd.get_table_data(selected_database="ANALYTICS",
+    mfunds_df = rd.get_table_data(selected_database="analytics",
                                   selected_table="MF_HOLDINGS")
     my_funds_codes = mfunds_df['Scheme_Code'].unique().tolist()
-    query = f"SELECT * FROM MFDATA.dbo.MF_SCHEME_DETAILS WHERE SCHEME_CODE IN {tuple(my_funds_codes)}"
+    query = f"SELECT * FROM mfdata.public.MF_SCHEME_DETAILS WHERE SCHEME_CODE IN {tuple(my_funds_codes)}"
 
     df = rd.get_table_data(query=query)
     status_list = []
@@ -58,7 +58,7 @@ def extract_and_load_latest_mf_hist_data():
 
         try:
             # mf_hist_data.to_sql(name=tbl_name, con=conn, if_exists='replace', index=False)
-            rd.load_sql_data(data_to_load=mf_hist_data, table_name=tbl_name, database='MFDATA')
+            rd.load_sql_data(data_to_load=mf_hist_data, table_name=tbl_name, database='mfdata')
             status_list.append(True)
         except Exception as e:
             status_list.append(False)

@@ -342,7 +342,7 @@ class StockChartApp(QMainWindow):
         dialog.setWindowTitle('My Portfolio')
         dialog.setModal(True)
 
-        portfolio_data = rd.get_table_data(selected_database='ANALYTICS', selected_table='OVERALL_SUMMARY_ACCOUNT_WISE')
+        portfolio_data = rd.get_table_data(selected_database='analytics', selected_table='OVERALL_SUMMARY_ACCOUNT_WISE')
         table = QTableWidget(dialog)
 
         # Set up the table structure based on portfolio data

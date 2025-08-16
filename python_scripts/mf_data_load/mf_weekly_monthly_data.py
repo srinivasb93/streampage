@@ -5,7 +5,7 @@ import urllib.parse
 #Connect to SQL SERVER
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=MFDATA;"
+                                 "DATABASE=mfdata;"
                                  "Trusted_Connection=yes")
 dbEngine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 conn = dbEngine.connect()
@@ -13,16 +13,16 @@ conn = dbEngine.connect()
 #stock_list = ['TATAMOTORS','MARUTI','ZEEL','BRITANNIA','SBIN','BAJAJFINSV','BAJFINANCE','HDFCBANK','ASIANPAINT','ICICIBANK','KOTAKBANK','RELIANCE','TITAN','HINDUNILVR','INDUSINDBK','ITC','NESTLEIND','INFY','TCS']
 #stock_list = ['TATAMOTORS']
 
-query = "SELECT mf_name FROM dbo.MUTUAL_FUNDS"
+query = "SELECT mf_name from public.MUTUAL_FUNDS"
 mfs_data = conn.execute(query)
 mf_names = mfs_data.fetchall()
 
 for mf in mf_names:
     mf = mf[0]
     print(mf)
-    # query = "SELECT * FROM dbo." + stock + " WHERE DATE >='2020-10-20 00:00:00.000' AND DATE <'2021-01-05 00:00:00.000' ORDER BY DATE ASC "
-    # query = "SELECT * FROM dbo." + stock + " WHERE DATE >='2020-01-25 00:00:00.000' ORDER BY DATE ASC "
-    query = "SELECT date,nav FROM dbo." + mf + " ORDER BY DATE ASC "
+    # query = "SELECT * from public." + stock + " WHERE DATE >='2020-10-20 00:00:00.000' AND DATE <'2021-01-05 00:00:00.000' ORDER BY DATE ASC "
+    # query = "SELECT * from public." + stock + " WHERE DATE >='2020-01-25 00:00:00.000' ORDER BY DATE ASC "
+    query = "SELECT date,nav from public." + mf + " ORDER BY DATE ASC "
     data = pd.read_sql_query(query, con=conn, parse_dates=True)
     #data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%m/%d/%Y')
     data['date'] = pd.to_datetime(data['date'])

@@ -13,7 +13,7 @@ nse = Nse()
 connection = pyodbc.connect(
                             'Driver={SQL Server};'
                             'Server=IN01-9MCXZH3\SQLEXPRESS;'
-                            'Database=NSEDATA;'
+                            'Database=nsedata;'
                             'Trusted_Connection=yes;'
                            )
 
@@ -134,7 +134,7 @@ class LongTermStrategy:
                                                                 * self.total_quantity, 2)
 
 # Take backup of the existing data in the database
-# query1 = 'select * from dbo.'
+# query1 = 'select * from public.'
 # data_combined = pd.read_sql(query1+'LONGTERM_COMBINED', con=connection2)
 # data_combined.to_sql(name='LONGTERM_COMBINED_BKP',con=connection2,if_exists='replace')
 # del data_combined
@@ -147,17 +147,17 @@ class LongTermStrategy:
 # data_all.to_sql(name='ALL_DATA_BKP',con=connection2,if_exists='replace')
 # del data_all
 # gc.collect()
-# connection2.execute('DROP TABLE IF EXISTS dbo.LONGTERM_COMBINED_BKP')
-# connection2.execute('DROP TABLE IF EXISTS dbo.LONGTERM_IND_BKP')
-# connection2.execute('DROP TABLE IF EXISTS dbo.ALL_DATA_BKP')
+# connection2.execute('DROP TABLE IF EXISTS public.LONGTERM_COMBINED_BKP')
+# connection2.execute('DROP TABLE IF EXISTS public.LONGTERM_IND_BKP')
+# connection2.execute('DROP TABLE IF EXISTS public.ALL_DATA_BKP')
 #
-# connection2.execute('SELECT * INTO dbo.LONGTERM_COMBINED_BKP FROM LONGTERM_COMBINED')
-# connection2.execute('SELECT * INTO dbo.LONGTERM_IND_BKP FROM LONGTERM_IND')
-# connection2.execute('SELECT * INTO dbo.ALL_DATA_BKP FROM ALL_DATA')
+# connection2.execute('SELECT * INTO public.LONGTERM_COMBINED_BKP FROM LONGTERM_COMBINED')
+# connection2.execute('SELECT * INTO public.LONGTERM_IND_BKP FROM LONGTERM_IND')
+# connection2.execute('SELECT * INTO public.ALL_DATA_BKP FROM ALL_DATA')
 
 cursor = connection.cursor()
-# cursor.execute('select * from dbo.stocks_list')
-# cursor.execute('select top 1* from dbo.SBIN')
+# cursor.execute('select * from public.stocks_list')
+# cursor.execute('select top 1* from public.SBIN')
 # stock_list = cursor.fetchall()
 cursor.close()
 final_data = pd.DataFrame()
@@ -167,9 +167,9 @@ stock_list = ['MOTHERSON', 'BAJFINANCE', 'HDFCBANK', 'ASIANPAINT', 'RELAXO', 'SO
 # stock_list = ['MOTHERSUMI','HDFCBANK']
 for stock in stock_list:
     print(f'Processing Stock : {stock}')
-    query = "SELECT * FROM DBO." + stock + " WHERE DATE >= '2020-01-01 00:00:00' ORDER BY DATE ASC"
-    # query = "SELECT * FROM DBO." + "SBIN" + " WHERE DATE >= '2021-02-02 00:00:00'"
-    # query = "SELECT * FROM DBO.SONATSOFTW ORDER BY DATE ASC"
+    query = "SELECT * from public." + stock + " WHERE DATE >= '2020-01-01 00:00:00' ORDER BY DATE ASC"
+    # query = "SELECT * from public." + "SBIN" + " WHERE DATE >= '2021-02-02 00:00:00'"
+    # query = "SELECT * from public.SONATSOFTW ORDER BY DATE ASC"
     stock_data = pd.read_sql(query, con=connection)
     stock_data['Month'] = pd.to_datetime(stock_data['Date'], format='%Y-%m-%d').dt.month
     stock_data.set_index('Date', inplace=True)

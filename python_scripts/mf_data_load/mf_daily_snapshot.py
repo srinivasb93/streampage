@@ -4,7 +4,7 @@ from common_utils import read_write_sql_data as rd
 
 mf = Mftool()
 
-mfunds_df = rd.get_table_data(selected_database="ANALYTICS",
+mfunds_df = rd.get_table_data(selected_database="analytics",
                               selected_table="MF_HOLDINGS")
 my_funds_codes = mfunds_df['Scheme_Code'].unique().tolist()
 
@@ -30,7 +30,7 @@ def load_or_get_mf_nav_snapshot_latest(fetch_type="load_and_fetch"):
 
     if "load" in fetch_type:
         try:
-            msg = rd.load_sql_data(df1, "LATEST_NAV_SNAPSHOT", database="ANALYTICS")
+            msg = rd.load_sql_data(df1, "LATEST_NAV_SNAPSHOT", database="analytics")
         except Exception as e:
             msg = "Snapshot Data load failed due to {}".format(e)
 

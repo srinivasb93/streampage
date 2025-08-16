@@ -7,7 +7,7 @@ from nsetools import Nse
 #Connect to SQL SERVER
 params = urllib.parse.quote_plus("DRIVER={SQL Server Native Client 11.0};"
                                  "SERVER=IN01-9MCXZH3\SQLEXPRESS;"
-                                 "DATABASE=NSEDATA;"
+                                 "DATABASE=nsedata;"
                                  "Trusted_Connection=yes")
 dbEngine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
 conn = dbEngine.connect()
@@ -15,13 +15,13 @@ conn = dbEngine.connect()
 #stock_list = ['TATAMOTORS','MARUTI','ZEEL','BRITANNIA','SBIN','BAJAJFINSV','BAJFINANCE','HDFCBANK','ASIANPAINT','ICICIBANK','KOTAKBANK','RELIANCE','TITAN','HINDUNILVR','INDUSINDBK','ITC','NESTLEIND','INFY','TCS']
 #stock_list = ['TATAMOTORS']
 
-query = """select SYMBOL from [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 200'
+query = """select SYMBOL from [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'NIFTY 200'
             UNION
-            select SYMBOL from [NSEDATA].[dbo].[ALL_STOCKS] where stk_index = 'MY STOCKS'
+            select SYMBOL from [nsedata].[dbo].[ALL_STOCKS] where stk_index = 'MY STOCKS'
             UNION
-            select [Stock_Symbol] from [ANALYTICS].[dbo].[EQUITY_HOLDINGS]
+            select [Stock_Symbol] from [analytics].[dbo].[EQUITY_HOLDINGS]
             UNION
-            SELECT NAME FROM dbo.STOCK_INDICES UNION SELECT NAME FROM dbo.STOCK_SECTORS"""
+            SELECT NAME from public.STOCK_INDICES UNION SELECT NAME from public.STOCK_SECTORS"""
 
 stocks_data = conn.execute(query)
 stocks = stocks_data.fetchall()
@@ -29,10 +29,10 @@ stocks = stocks_data.fetchall()
 for stock in stocks:
     stock = stock[0]
     print(stock)
-    # query = "SELECT * FROM dbo." + stock + " WHERE DATE >='2020-10-20 00:00:00.000' AND DATE <'2021-01-05 00:00:00.000' ORDER BY DATE ASC "
-    # query = "SELECT * FROM dbo." + stock + " WHERE DATE >='2020-01-25 00:00:00.000' ORDER BY DATE ASC "
+    # query = "SELECT * from public." + stock + " WHERE DATE >='2020-10-20 00:00:00.000' AND DATE <'2021-01-05 00:00:00.000' ORDER BY DATE ASC "
+    # query = "SELECT * from public." + stock + " WHERE DATE >='2020-01-25 00:00:00.000' ORDER BY DATE ASC "
     try:
-        query = "SELECT * FROM dbo." + stock + " ORDER BY DATE ASC "
+        query = "SELECT * from public." + stock + " ORDER BY DATE ASC "
         data = pd.read_sql_query(query, con=conn, parse_dates=True)
         #data['Date'] = pd.to_datetime(data['Date']).dt.strftime('%m/%d/%Y')
         data['Date'] = pd.to_datetime(data['Date'])

@@ -23,7 +23,7 @@ def get_bar_data(chart, mode='selection', fetch_data=False, need_drawings=False)
     elif timeframe == 'M':
         symbol = symbol + '_M'
 
-    query = f"SELECT * FROM NSEDATA.dbo.{symbol} ORDER BY Date"
+    query = f"SELECT * FROM nsedata.public.{symbol} ORDER BY Date"
     stock_data = rd.get_table_data(query=query)
 
     if fetch_data:

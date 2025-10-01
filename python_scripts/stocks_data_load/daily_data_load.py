@@ -5,12 +5,11 @@ from datetime import date
 import re
 from common_utils import read_write_sql_data as rd
 import logging
+from common_utils.logging_utils import configure_logging
 import nsepython as np
 
-log = logging.getLogger()
-logging.basicConfig(filename=r"C:\Users\sba400\MyProject\streampage\python_scripts\logfiles\DATALOAD.log",
-                    format=f"%(asctime)s : %(name)s : %(message)s",
-                    level='DEBUG')
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
 class Dataload:
@@ -37,7 +36,7 @@ class Dataload:
             # bcopy_indices.to_sql(name='BHAVCOPY_INDICES', con=self.conn, if_exists='replace', index=False)
             return 'Bhav Copy extraction and data load is complete'
         except Exception as e:
-            log.exception('Bhav copy is not available for Date {} : Error Msg :  {}'.format(
+            logger.exception('Bhav copy is not available for Date {} : Error Msg :  {}'.format(
                 extract_date, e.__str__()))
             return 'File not available'
     ############################################################################################################
@@ -45,12 +44,12 @@ class Dataload:
     def get_stocks_index_data(self, data_type='Stock'):
         """ Method to get stocks and indices list from SQL database """
         if data_type == 'Stock':
-            log.info("Fetching Stock names from SQL")
+            logger.info("Fetching Stock names from SQL")
             stocks_in_db = rd.get_table_data(selected_table='STOCKS_IN_DB')
             my_holdings = rd.get_table_data(selected_database='analytics', selected_table='EQUITY_HOLDINGS')
             stocks = list(set(stocks_in_db['SYMBOL'].values.tolist() + my_holdings['Stock_Symbol'].values.tolist()))
         else:
-            log.info("Fetching Index/Sector names from SQL")
+            logger.info("Fetching Index/Sector names from SQL")
             indices = rd.get_table_data(selected_table='STOCK_INDICES')
             sectors = rd.get_table_data(selected_table='STOCK_SECTORS')
             all_indices = indices['name'].values.tolist() + sectors['name'].values.tolist()
@@ -59,7 +58,7 @@ class Dataload:
 
     def read_bhav_data(self, data_type='Stock'):
         """ Method to read bhav data for both stocks and indices """
-        log.info(f"Read bhavdata for {data_type}")
+        logger.info(f"Read bhavdata for {data_type}")
         if data_type == 'Stock':
             bhav_table = 'BHAVCOPY'
         else:
@@ -98,7 +97,7 @@ class Dataload:
 
         data_to_add = self.df_today[self.df_today.index == stock]
 
-        log.info("Start Data Load for the stock : {}".format(stock))
+        logger.info("Start Data Load for the stock : {}".format(stock))
         if '&' in stock or '-' in stock:
             stock = stock.replace('&', '').replace('-', '')
 
@@ -106,9 +105,9 @@ class Dataload:
         # data_to_add.to_sql(name=stock, con=self.conn, if_exists='append', index=False)
         msg = rd.load_sql_data(data_to_load=data_to_add, table_name=stock, load_type='append')
         if 'success' in msg:
-            log.info("Data Load done for the stock : {}".format(stock))
+            logger.info("Data Load done for the stock : {}".format(stock))
         else:
-            log.debug(f'Data load failed for the stock {stock}')
+            logger.debug(f'Data load failed for the stock {stock}')
     ################################################################################################################
 
     def load_index_data(self, stock):
@@ -146,11 +145,11 @@ class Dataload:
             stock = 'NIFTY_CONSUMPTION'
         if stock == 'Nifty Financial Services':
             stock = 'NIFTY_FIN_SERVICE'
-        log.info("Start Data Load for the Index : {}".format(stock))
+        logger.info("Start Data Load for the Index : {}".format(stock))
         # Write data read from bhav table to SQL Server table
         # data_to_add.to_sql(name=stock, con=self.conn, if_exists='append', index=False)
         rd.load_sql_data(data_to_load=data_to_add, table_name=stock, load_type='append')
-        log.info("Data Load done for the Index : {}".format(stock))
+        logger.info("Data Load done for the Index : {}".format(stock))
     #################################################################################################################
 
     @staticmethod
@@ -181,7 +180,7 @@ class Dataload:
 
 
 def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
-    log.info("Initiate Daily Data load")
+    logger.info("Initiate Daily Data load")
     # Specify stock or index type
     stock_index = ['Stock', 'Index']
     # stock_index = ['Stock']
@@ -207,29 +206,29 @@ def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
     else:
         extract_date_range = [for_date]
 
-    log.info(f"Data to be extracted for the range {extract_date_range}")
+    logger.info(f"Data to be extracted for the range {extract_date_range}")
     # Loop through the date range to call methods for the data load
     for extract_date in extract_date_range:
-        log.info(f"Extracting data for the date:  {extract_date}")
+        logger.info(f"Extracting data for the date:  {extract_date}")
         extract_date = pd.to_datetime(extract_date).date()
         # Skip load if the date is falling on a weekend
         day_is = extract_date.strftime('%A')
         if day_is in ['Saturday', 'Sunday']:
-            log.info('{} - {} is a weekend Holiday'.format(extract_date, day_is))
+            logger.info('{} - {} is a weekend Holiday'.format(extract_date, day_is))
             continue
         elif extract_date in nse_holidays:
-            log.info(f"It's a holiday on {extract_date}. No Data found")
+            logger.info(f"It's a holiday on {extract_date}. No Data found")
             continue
         elif datetime.datetime.now().hour < 19 and extract_date == datetime.date.today():
             msg = f"Latest data is already loaded. Try data load after 19:00 for {extract_date} data"
-            log.info(msg)
+            logger.info(msg)
             return msg
         # Call method to extract bhav copy for stocks and indices
-        log.info('Extracting bhav data for the Date : {}'.format(extract_date))
+        logger.info('Extracting bhav data for the Date : {}'.format(extract_date))
         bhav_copy_load = dataload.extract_bhav_copy(extract_date)
         # If bhav copy is available, proceed with the data load for each stock and index
         if re.search(r"complete", bhav_copy_load):
-            log.info(f'Bhav Data extraction is complete for the Date : {extract_date}')
+            logger.info(f'Bhav Data extraction is complete for the Date : {extract_date}')
             for stock_type in stock_index:
                 # Get list of stocks/indices
                 stocks_list = dataload.get_stocks_index_data(stock_type)
@@ -243,15 +242,15 @@ def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
                             date_diff = extract_date - dataload.get_max_date(stock)
                             # Exception handling for no data in SQL for the stock
                         except:
-                            log.error('No data for the stock : {}'.format(stock))
+                            logger.error('No data for the stock : {}'.format(stock))
                             continue
                         if date_diff.days <= 0 and not adhoc_date:
-                            log.info('skipped load for Stock : {}'.format(stock))
+                            logger.info('skipped load for Stock : {}'.format(stock))
                             continue
                         try:
                             dataload.load_stock_data(stock)
                         except:
-                            log.error('Data Load is not complete for {}'.format(stock))
+                            logger.error('Data Load is not complete for {}'.format(stock))
                             data_load_failed_stocks.append(stock)
                 else:
                     # Call data load method for each index
@@ -259,15 +258,15 @@ def equity_daily_data_load(for_date=datetime.date.today(), adhoc_date=False):
                         date_diff = extract_date - dataload.get_max_date(nse_index)
 
                         if date_diff.days <= 0 and not adhoc_date:
-                            log.info('skipped load for Index : {}'.format(nse_index))
+                            logger.info('skipped load for Index : {}'.format(nse_index))
                             continue
                         try:
                             dataload.load_index_data(nse_index)
                         except:
-                            log.error('Data Load is not complete for {}'.format(nse_index))
+                            logger.error('Data Load is not complete for {}'.format(nse_index))
                             data_load_failed_indices.append(nse_index)
-            log.debug(f"Data load failed for stocks on date {extract_date} - {data_load_failed_stocks}")
-            log.debug(f"Data load failed for indices on date {extract_date} - {data_load_failed_indices}")
+            logger.debug(f"Data load failed for stocks on date {extract_date} - {data_load_failed_stocks}")
+            logger.debug(f"Data load failed for indices on date {extract_date} - {data_load_failed_indices}")
         else:
             continue
 

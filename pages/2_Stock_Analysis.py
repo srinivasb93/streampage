@@ -72,10 +72,8 @@ def extract_stock_data(stock_name, data_source='SQL', period_sql='Daily', period
         query = f'select * from public."{stock_name}" order by timestamp ASC'
         df = rd.get_table_data(query=query)
         if period_sql == 'Daily':
-            try:
-                df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
-            except:
-                pass
+            # Ensure tz-naive datetime; data is stored tz-naive in DB
+            df["timestamp"] = pd.to_datetime(df["timestamp"]) 
         df.set_index("timestamp", inplace=True)
     elif data_source == 'Upstox':
         instruments_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
@@ -297,7 +295,7 @@ def stock_analysis():
             timeframe_option = st.selectbox("Timeframe", ('1minute', 'day', 'week', 'month'))
             df = extract_stock_data(stock_name, data_source='Upstox', period_upstox=timeframe_option)
 
-        data_replay = st.checkbox("Replay Data")
+        data_replay = st.checkbox("Replay Data", value=True)
 
         if data_replay:
             replay_date = st.date_input("Replay Date", value=df.index[-1].date(), min_value=df.index[0].date(),
@@ -377,7 +375,12 @@ def stock_analysis():
 
     if data_replay:
         if st.session_state.current_replay_index == -1 or replay_date != st.session_state.last_replay_date:
-            st.session_state.current_replay_index = df.index.get_loc(pd.Timestamp(replay_date - dt.timedelta(days=1)))
+            # Use nearest previous available index if the exact day is missing (holidays/weekends/gaps)
+            target_ts = pd.Timestamp(replay_date) - dt.timedelta(days=1)
+            idx_pos = df.index.get_indexer([target_ts], method='pad')[0]
+            if idx_pos == -1:
+                idx_pos = 0
+            st.session_state.current_replay_index = int(idx_pos)
             st.session_state.last_replay_date = replay_date
 
     if st.session_state.is_playing:

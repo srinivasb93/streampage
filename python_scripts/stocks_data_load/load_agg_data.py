@@ -2,12 +2,11 @@ import pandas as pd
 from common_utils import read_write_sql_data as rd
 from python_scripts.candle import find_candle
 import logging
+from common_utils.logging_utils import configure_logging
 import pandas_ta as ta
 
-log = logging.getLogger()
-logging.basicConfig(filename=r"C:\Users\sba400\MyProject\streampage\python_scripts\logfiles\AGG_DATA_LOAD.log",
-                    format=f"%(asctime)s : %(name)s : %(message)s",
-                    level='DEBUG')
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
 def resample_daily_data(daily_data, resample_to='W'):
@@ -79,7 +78,7 @@ def stocks_agg_data_load():
     for stock in stocks_indices_sectors:
         if "-" in stock:
             stock = stock.replace("-", "_")
-        log.info(stock)
+        logger.info(stock)
         try:
             get_query = f"select * from public.\"{stock}\" order by timestamp ASC"
             daily_data = rd.get_table_data(query=get_query)
@@ -94,17 +93,17 @@ def stocks_agg_data_load():
             # agg_quarterly_data = resample_daily_data(df, 'Q')
             agg_yearly_data = resample_daily_data(daily_data, 'Y')
 
-            log.info("Start data load for the stock : {}".format(stock))
+            logger.info("Start data load for the stock : {}".format(stock))
             # Write data to SQL Server table
             msg1 = rd.load_sql_data(data_to_load=agg_weekly_data, table_name=stock + '_W')
-            log.debug(msg1)
+            logger.debug(msg1)
             msg2 = rd.load_sql_data(data_to_load=agg_monthly_data, table_name=stock + '_M')
-            log.debug(msg2)
+            logger.debug(msg2)
             # msg3 = rd.load_sql_data(data_to_load=agg_quarterly_data, table_name=stock + '_Q')
             # print(msg3)
             msg4 = rd.load_sql_data(data_to_load=agg_yearly_data, table_name=stock + '_Y')
-            log.debug(msg4)
-            log.info("Data load done for the stock : {}".format(stock))
+            logger.debug(msg4)
+            logger.info("Data load done for the stock : {}".format(stock))
 
             daily_data['Range_D'] = round(daily_data['high'] - daily_data['low'], 1)
             daily_data['Symbol'] = stock
@@ -158,17 +157,17 @@ def stocks_agg_data_load():
             combined_agg_data = pd.concat([combined_agg_data, combined_data_df], axis=0)
 
         except Exception as e:
-            log.error(e)
-            log.warning("Skipped data load for the stock : {}".format(stock))
+            logger.error(e)
+            logger.warning("Skipped data load for the stock : {}".format(stock))
             failed_agg_load.append(stock)
             continue
 
     msg5 = rd.load_sql_data(data_to_load=combined_agg_data, table_name='AGG_DATA')
-    log.info(msg5)
+    logger.info(msg5)
     msg = 'Aggregated data load is successful for all the stocks'
-    log.info(msg)
+    logger.info(msg)
     if failed_agg_load:
-        log.debug(f'Agg data load failed for stocks - {failed_agg_load}')
+        logger.debug(f'Agg data load failed for stocks - {failed_agg_load}')
     return 'Success' if not failed_agg_load else 'Failed'
 
 

@@ -2,10 +2,12 @@ import asyncio
 from functools import partial
 import pandas as pd
 import logging
+
+from .logging_utils import configure_logging
 from .read_write_sql_data import create_connection
 
+configure_logging()
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 # Database configuration
 DATABASE = "nsedata"

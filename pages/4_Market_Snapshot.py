@@ -238,6 +238,17 @@ def market_snapshot():
     else:
         agg_data = fetch_table_data(table_name='AGG_DATA')
         data_df = agg_data.copy()
+
+        # Gracefully handle empty/missing data to avoid KeyError
+        if data_df is None or data_df.empty:
+            st.error("No AGG_DATA available. Check database connectivity and table contents.")
+            return
+
+        if 'Symbol' not in data_df.columns:
+            st.error("Expected column 'Symbol' not found in AGG_DATA.")
+            st.caption(f"Available columns: {list(data_df.columns)}")
+            return
+
         indices_data = data_df['Symbol']
 
 

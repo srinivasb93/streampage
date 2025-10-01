@@ -176,8 +176,8 @@ def backtest_fixed_strategy(data, fixed_investment, investment_day=15):
         # Convert YearMonth back to datetime
         month_start = year_month.start_time
 
-        # Find the investment day for the current month
-        investment_date = pd.Timestamp(month_start.replace(day=investment_day)).tz_localize('Asia/Kolkata').tz_convert(None)
+        # Find the investment day for the current month (keep as tz-naive to match data)
+        investment_date = pd.Timestamp(month_start.replace(day=investment_day))
         if investment_date not in data['timestamp'].values:
             # Find the next available trading day after the investment date
             next_available_dates = data[data['timestamp'] > investment_date]
@@ -228,7 +228,8 @@ def fetch_data_from_db(table_name, start_date, end_date):
     """
     query = f"SELECT * FROM public.\"{table_name}\" WHERE timestamp BETWEEN '{start_date}' AND '{end_date}' ORDER BY timestamp ASC"
     data = rd.get_table_data(query=query)
-    data['timestamp'] = pd.to_datetime(data['timestamp']).dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
+    # Ensure timestamp is datetime (tz-naive, consistent with stored data)
+    data['timestamp'] = pd.to_datetime(data['timestamp'])
     return data
 
 # Streamlit app

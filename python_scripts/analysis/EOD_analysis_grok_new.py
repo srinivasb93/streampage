@@ -6,10 +6,11 @@ from common_utils import read_write_sql_data as rd  # Assuming this is your SQL 
 import multiprocessing as mp
 import configparser
 import logging
+from common_utils.logging_utils import configure_logging
 from functools import partial
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+configure_logging()
 
 # Load configuration
 config = configparser.ConfigParser()

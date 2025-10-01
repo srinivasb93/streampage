@@ -1,4 +1,10 @@
+import logging
 import streamlit as st
+
+from common_utils.logging_utils import configure_logging
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 # Set the page configuration. This should be the first Streamlit command.
 st.set_page_config(page_title="Analytics Dashboard",
@@ -21,6 +27,8 @@ st.markdown('<style>div.block-container{padding-top:2rem;padding-right:0rem;}</s
 
 # --- Main Home Page Content ---
 
+logger.info("Rendering Financial Analytics Dashboard home page")
+
 st.title("Financial Analytics Dashboard")
 
 st.markdown("""
@@ -29,7 +37,7 @@ This application is a comprehensive suite of tools for financial market analysis
 **Navigate through the different modules using the sidebar on the left.**
 """)
 
-st.info("Select a page from the navigation bar to get started.", icon="👈")
+st.info("Select a page from the navigation bar to get started.", icon="\U0001F448")
 
 st.subheader("Key Features")
 
@@ -54,3 +62,4 @@ with col3:
     """)
 
 st.sidebar.success("Select a page above to begin.")
+

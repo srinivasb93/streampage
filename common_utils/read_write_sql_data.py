@@ -2,7 +2,10 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 import logging
+
+from .logging_utils import configure_logging
 import configparser
+import os
 import threading
 import datetime as dt
 
@@ -15,14 +18,28 @@ from common_utils import upstox_utils # For stock data fallback
 # --- Configuration ---
 
 def get_config():
-    """Reads database credentials from config.ini."""
+    """Reads database credentials from config.ini and applies env var overrides."""
     config = configparser.ConfigParser()
     config.read('config.ini')
+
+    # Allow overriding [postgres] settings via environment variables
+    # Supported env vars: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DATABASE
+    if 'postgres' in config:
+        overrides = {
+            'host': os.getenv('POSTGRES_HOST'),
+            'port': os.getenv('POSTGRES_PORT'),
+            'user': os.getenv('POSTGRES_USER'),
+            'password': os.getenv('POSTGRES_PASSWORD'),
+            'database': os.getenv('POSTGRES_DATABASE'),
+        }
+        for key, value in overrides.items():
+            if value:
+                config['postgres'][key] = value
+
     return config
 
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+configure_logging()
 logger = logging.getLogger(__name__)
 
 # --- Multi-Database Connection Management ---
@@ -505,3 +522,4 @@ if __name__ == '__main__':
 
     # Update index data example
     # print(update_index_sector_daily('NIFTY'))
+

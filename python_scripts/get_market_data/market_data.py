@@ -5,12 +5,28 @@ import datetime
 import json
 import pandas as pd
 import requests
-from common_utils import read_write_sql_data as rd
 import datetime as dt
 import logging
+import sys
+import os
+
+# Add the project root and common_utils directory to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+project_root = os.path.dirname(parent_dir)
+common_utils_dir = os.path.join(project_root, 'common_utils')
+
+if common_utils_dir not in sys.path:
+    sys.path.insert(0, common_utils_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from common_utils import read_write_sql_data as rd
+from common_utils.logging_utils import configure_logging
+
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', force=True)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 headers = {
@@ -83,6 +99,29 @@ class MarketData:
             if payload['data'][m]['symbol'] == symbol.upper():
                 return payload['data'][m]
         return {}
+
+    @staticmethod
+    def nse_holidays(type="trading", load=False, as_df=True):
+        merged_df = pd.DataFrame()
+        if type in ["clearing", "all"]:
+            payload = fetch_nse_data('https://www.nseindia.com/api/holiday-master?type=clearing')
+            clearing_df = pd.DataFrame(payload['CM'])
+            clearing_df['type'] = 'clearing'
+            clearing_df.rename(columns={'tradingDate': 'trading_date', 'weekDay': 'week_day'}, inplace=True)
+            clearing_df['trading_date'] = pd.to_datetime(clearing_df['trading_date'], format='%d-%b-%Y')
+            merged_df = pd.concat([merged_df, clearing_df[['trading_date', 'week_day', 'description', 'type']]], ignore_index=True)
+        if type in ["trading", "all"]:
+            payload = fetch_nse_data('https://www.nseindia.com/api/holiday-master?type=trading')
+            trading_df = pd.DataFrame(payload['CM'])
+            trading_df['type'] = 'trading'
+            trading_df.rename(columns={'tradingDate': 'trading_date', 'weekDay': 'week_day'}, inplace=True)
+            trading_df['trading_date'] = pd.to_datetime(trading_df['trading_date'], format='%d-%b-%Y')
+            merged_df = pd.concat([merged_df, trading_df[['trading_date', 'week_day', 'description', 'type']]], ignore_index=True)
+        if load:
+            msg = rd.load_sql_data(merged_df, table_name='NSE_HOLIDAYS')
+            logger.info(msg)
+            return "Success" if "success" in msg else "Failure"
+        return merged_df if as_df else payload
 
     def equity_history_virgin(self, symbol, series, start_date, end_date):
         url = 'https://www.nseindia.com/api/historical/cm/equity?symbol=' + symbol + '&series=["' + series + '"]&from=' + start_date + '&to=' + end_date
@@ -334,13 +373,18 @@ def index_pe_pb_div(symbol,start_date,end_date):
     payload=pd.DataFrame.from_records(payload)
     return payload
 
-def get_bhavcopy(date):
+def get_bhavcopy(date, load=False):
     date = date.replace("-","")
     payload=pd.read_csv("https://archives.nseindia.com/products/content/sec_bhavdata_full_"+date+".csv")
+    if load:
+        rd.load_sql_data(payload, table_name='BHAVCOPY')
+        return "Success"
+    else:
+        return payload
     return payload
 
 
-def load_index_and_stocks_data(load_type="Index_data_load"):
+def load_index_and_stocks_data(load_type="Index_data_load", date=None):
     md = MarketData()
     indices_list = md.broad_indices_list + md.sector_indices_list + md.thematic_indices_list
     data_load_msg = ""
@@ -356,6 +400,8 @@ def load_index_and_stocks_data(load_type="Index_data_load"):
         data_load_msg = md.fetch_and_load_etf_data(load=True)
     elif load_type == "NSE_Events_load":
         data_load_msg = md.fetch_and_load_nse_events()
+    elif load_type == "Bhavcopy_data_load":
+        data_load_msg = get_bhavcopy(date, load=True)
     else:
         data_load_msg = "Invalid load type specified"
     return data_load_msg
@@ -388,13 +434,15 @@ if __name__ == "__main__":
     # print(md.equity_history('SBIN', 'EQ', '01-01-2023', '01-02-2023'))
     # print(md.security_wise_archive('01-01-2023', '01-01-2024', 'SBIN', series='EQ'))
     # print(md.nse_get_advances_declines())
-    # data = md.fetch_index_pe_pb_div_data(start_date="1-1-2020",
+    # data = index_pe_pb_div("NIFTY 50", start_date="1-1-2020",
     #                                      end_date="1-1-2025")
     # print(data)
+    print(md.nse_holidays(type="all", as_df=True, load=True))
     # print(md.load_index_stocks_data(indices_list))
-    print(md.load_all_stocks_table_with_stock_index(indices_list))
+    # print(md.load_all_stocks_table_with_stock_index(indices_list))
     # print(md.get_main_nse_indices_list())
     # print(index_history("NIFTY 50", "01-01-2023", "01-01-2024"))
     # print(index_pe_pb_div("NIFTY 50", "01-01-2023", "01-01-2024"))
     # print(index_total_returns("NIFTY 50", "01-01-2023", "01-01-2024"))
-    # print(get_bhavcopy("2023-01-01"))
+    # print(get_bhavcopy("19-09-2025", True))
+

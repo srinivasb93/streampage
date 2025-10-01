@@ -4,11 +4,10 @@ from mftool import Mftool
 import pandas as pd
 from common_utils import read_write_sql_data as rd
 import logging
+from common_utils.logging_utils import configure_logging
 
-log = logging.getLogger()
-logging.basicConfig(filename=r"C:\Users\sba400\MyProject\streampage\python_scripts\logfiles\MF_HISTDATA_LOAD.log",
-                    format=f"%(asctime)s : %(name)s : %(message)s",
-                    level='DEBUG')
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
 def extract_and_load_latest_mf_hist_data():
@@ -28,7 +27,7 @@ def extract_and_load_latest_mf_hist_data():
 
     for data in df.itertuples():
         code = data[4]
-        log.info("Extract data for the Fund : {}".format(data[5]))
+        logger.info("Extract data for the Fund : {}".format(data[5]))
         # if str(code) != '120841':
         #     continue
         fund_house = data[1].split(' ')[0]
@@ -62,10 +61,10 @@ def extract_and_load_latest_mf_hist_data():
             status_list.append(True)
         except Exception as e:
             status_list.append(False)
-            log.exception('error is : {}'.format(e))
-            log.error("Data Load not done for the Fund : {}".format(data[5]))
+            logger.exception('error is : {}'.format(e))
+            logger.error("Data Load not done for the Fund : {}".format(data[5]))
             continue
-        log.info("Data Load done for the Fund : {}".format(data[5]))
+        logger.info("Data Load done for the Fund : {}".format(data[5]))
         time.sleep(2)
 
     return 'Success' if all(status_list) else 'Failure'
@@ -73,3 +72,4 @@ def extract_and_load_latest_mf_hist_data():
 
 if __name__ == '__main__':
     extract_and_load_latest_mf_hist_data()
+

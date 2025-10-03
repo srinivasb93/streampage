@@ -62,6 +62,41 @@ if "live_data" not in st.session_state:
     st.session_state.live_data = {"ltp": 0}
 
 
+if "additional_chart_timeframes" not in st.session_state:
+    st.session_state.additional_chart_timeframes = []
+
+
+SQL_TIMEFRAME_OPTIONS = [
+    ("Daily", "Daily"),
+    ("Weekly", "Weekly"),
+    ("Monthly", "Monthly"),
+    ("Quarterly", "Quarterly"),
+    ("Yearly", "Yearly"),
+]
+
+UPSTOX_TIMEFRAME_OPTIONS = [
+    ("1 Minute", "1minute"),
+    ("Daily", "day"),
+    ("Weekly", "week"),
+    ("Monthly", "month"),
+]
+
+
+def get_timeframe_options(source):
+    return SQL_TIMEFRAME_OPTIONS if source == 'SQL' else UPSTOX_TIMEFRAME_OPTIONS
+
+
+def get_timeframe_value(label, options):
+    for display, value in options:
+        if display == label:
+            return value
+    return options[0][1]
+
+
+def sanitize_sql_symbol(symbol):
+    return symbol.replace('-', '_').replace(' ', '_')
+
+
 # Data Extraction
 @st.cache_data
 def extract_stock_data(stock_name, data_source='SQL', period_sql='Daily', period_upstox='days'):
@@ -126,30 +161,69 @@ def slope(ser, n):
         reg_prices.append(model.predict(results.params)[-1])
     return reg_prices
 
+def _format_numeric_suffix(value):
+    """Consistently format numeric suffixes like periods or std deviations."""
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if numeric_value.is_integer():
+        return f"{int(numeric_value)}.0"
+    return str(numeric_value).rstrip('0').rstrip('.')
+
+
 def calculate_stock_technical_summary(stock_df, indicators):
-    for indicator, instances in indicators.items():
+    indicator_items = [(indicator, list(instances)) for indicator, instances in list(indicators.items())]
+    for indicator, instances in indicator_items:
         for params in instances:
             if indicator == 'EMA':
-                col_name = f'EMA_{params["period"]}'
-                stock_df[col_name] = ta.ema(stock_df["close"], length=params['period'])
+                period = int(params['period'])
+                col_name = f'EMA_{period}'
+                stock_df[col_name] = ta.ema(stock_df["close"], length=period)
             elif indicator == 'SMA':
-                col_name = f'SMA_{params["period"]}'
-                stock_df[col_name] = ta.sma(stock_df["close"], length=params['period'])
+                period = int(params['period'])
+                col_name = f'SMA_{period}'
+                stock_df[col_name] = ta.sma(stock_df["close"], length=period)
             elif indicator == 'WMA':
-                col_name = f'WMA_{params["period"]}'
-                stock_df[col_name] = ta.wma(stock_df["close"], length=params['period'])
+                period = int(params['period'])
+                col_name = f'WMA_{period}'
+                stock_df[col_name] = ta.wma(stock_df["close"], length=period)
             elif indicator == 'BBANDS':
-                bbands = ta.bbands(stock_df["close"], length=params['period'], std=params['std'])
-                stock_df = pd.concat([stock_df, bbands], axis=1)
+                period = int(params['period'])
+                std_value = params.get('std', 2.0)
+                std_float = float(std_value)
+                std_suffix = _format_numeric_suffix(std_float)
+                bbands = ta.bbands(
+                    stock_df["close"],
+                    length=period,
+                    lower_std=std_float,
+                    upper_std=std_float
+                )
+                if bbands is not None:
+                    rename_map = {}
+                    for col in bbands.columns:
+                        if col.startswith(('BBL', 'BBM', 'BBU', 'BBB', 'BBP')):
+                            parts = col.split('_')
+                            if len(parts) >= 2:
+                                base = parts[0]
+                                rename_map[col] = f'{base}_{period}_{std_suffix}'
+                    if rename_map:
+                        bbands = bbands.rename(columns=rename_map)
+                    stock_df = pd.concat([stock_df, bbands], axis=1)
             elif indicator == 'MACD':
-                macd = ta.macd(stock_df["close"], fast=params['fast'], slow=params['slow'], signal=params['signal'])
+                fast = int(params['fast'])
+                slow = int(params['slow'])
+                signal = int(params['signal'])
+                macd = ta.macd(stock_df["close"], fast=fast, slow=slow, signal=signal)
                 stock_df = pd.concat([stock_df, macd], axis=1)
             elif indicator == 'RSI':
-                col_name = f'RSI_{params["period"]}'
-                stock_df[col_name] = ta.rsi(stock_df["close"], length=params['period'])
+                period = int(params['period'])
+                col_name = f'RSI_{period}'
+                stock_df[col_name] = ta.rsi(stock_df["close"], length=period)
             elif indicator == 'LINREG':
-                col_name = f'LINREG_{params["period"]}'
-                stock_df[col_name] = slope(stock_df["close"], n=params['period'])
+                period = int(params['period'])
+                col_name = f'LINREG_{period}'
+                stock_df[col_name] = slope(stock_df["close"], n=period)
     return stock_df
 
 
@@ -204,6 +278,7 @@ def remove_close_levels(levels, threshold=0.02):
 
 
 def create_tv_chart(chart, stock_name, data, theme='default'):
+    indicator_snapshot = {indicator: list(instances) for indicator, instances in st.session_state.indicators.items()}
     chart.legend(True, font_size=20, color_based_on_candle=True, color="#1e81b0")
     chart.topbar.textbox('symbol', stock_name, align='center')
     chart.set(data, keep_drawings=True)
@@ -211,9 +286,9 @@ def create_tv_chart(chart, stock_name, data, theme='default'):
     # Create subcharts for RSI and MACD
     subcharts = {}
     for indicator in ['RSI', 'MACD']:
-        if indicator in st.session_state.indicators:
+        if indicator in indicator_snapshot:
             # if both RSI and MACD are to be seen, then
-            if 'RSI' in st.session_state.indicators and 'MACD' in st.session_state.indicators:
+            if 'RSI' in indicator_snapshot and 'MACD' in indicator_snapshot:
                 subcharts[indicator] = chart.create_subchart(position='bottom', height=0.2, width=1, sync=True)
                 chart.resize(width=1, height=.6)
             else:
@@ -225,7 +300,7 @@ def create_tv_chart(chart, stock_name, data, theme='default'):
             subcharts[indicator].fit()
             subcharts[indicator].legend(True)
 
-    for indicator, instances in st.session_state.indicators.items():
+    for indicator, instances in indicator_snapshot.items():
         for params in instances:
             if indicator in ['RSI', 'MACD']:
                 add_indicator_line(subcharts[indicator], data, indicator, params)
@@ -243,35 +318,56 @@ def create_tv_chart(chart, stock_name, data, theme='default'):
 def add_indicator_line(chart, df, indicator, params):
     color = params['color_code']
     if indicator == 'BBANDS':
+        period = int(params['period'])
+        std_suffix = _format_numeric_suffix(params.get('std', 2.0))
         for col, col_color in [('BBU', 'red'), ('BBM', 'cyan'), ('BBL', 'green')]:
-            line = chart.create_line(name=f'{col}_{params["period"]}', color=col_color, width=1.25, price_label=True,
+            column_name = f'{col}_{period}_{std_suffix}'
+            if column_name not in df.columns:
+                continue
+            line = chart.create_line(name=f'{col}_{period}', color=col_color, width=1.25, price_label=True,
                                      price_line=False)
-            ind_df = pd.DataFrame(
-                {'time': df.index, f'{col}_{params["period"]}': df[f'{col}_{params["period"]}_{params["std"]}']})
+            ind_df = pd.DataFrame({'time': df.index, f'{col}_{period}': df[column_name]})
             line.set(ind_df.dropna())
     elif indicator == 'MACD':
+        fast = int(params['fast'])
+        slow = int(params['slow'])
+        signal = int(params['signal'])
         macd_line = chart.create_line(name='MACD', color=color, width=1.5, price_line=False)
         signal_line = chart.create_line(name='MACD_Signal', color='red', width=1.5, price_line=False)
         histogram = chart.create_histogram(name='MACD_Hist', color=color, price_line=False)
 
+        macd_key = f'MACD_{fast}_{slow}_{signal}'
+        macd_signal_key = f'MACDs_{fast}_{slow}_{signal}'
+        macd_hist_key = f'MACDh_{fast}_{slow}_{signal}'
+
+        if not all(key in df.columns for key in [macd_key, macd_signal_key, macd_hist_key]):
+            return
+
         ind_df = pd.DataFrame({
             'time': df.index,
-            'MACD': df[f'MACD_{params["fast"]}_{params["slow"]}_{params["signal"]}'],
-            'MACD_Signal': df[f'MACDs_{params["fast"]}_{params["slow"]}_{params["signal"]}'],
-            'MACD_Hist': df[f'MACDh_{params["fast"]}_{params["slow"]}_{params["signal"]}']
+            'MACD': df[macd_key],
+            'MACD_Signal': df[macd_signal_key],
+            'MACD_Hist': df[macd_hist_key]
         })
         macd_line.set(ind_df[['time', 'MACD']])
         signal_line.set(ind_df[['time', 'MACD_Signal']])
         histogram.set(ind_df[['time', 'MACD_Hist']])
     elif indicator == 'RSI':
-        line = chart.create_line(name=f'RSI_{params["period"]}', color=color, width=1.5, price_line=False)
-        ind_df = pd.DataFrame({'time': df.index, f'RSI_{params["period"]}': df[f'RSI_{params["period"]}']})
+        period = int(params['period'])
+        column_name = f'RSI_{period}'
+        if column_name not in df.columns:
+            return
+        line = chart.create_line(name=column_name, color=color, width=1.5, price_line=False)
+        ind_df = pd.DataFrame({'time': df.index, column_name: df[column_name]})
         line.set(ind_df)
     else:
         # For EMA, SMA, WMA, LINREG
-        line_name = f'{indicator}_{params["period"]}'
+        period = int(params['period'])
+        line_name = f'{indicator}_{period}'
+        if line_name not in df.columns:
+            return
         line = chart.create_line(name=line_name, color=color, width=1.5, price_label=True, price_line=False)
-        ind_df = pd.DataFrame({'time': df.index, line_name: df[f'{indicator}_{params["period"]}']})
+        ind_df = pd.DataFrame({'time': df.index, line_name: df[line_name]})
         line.set(ind_df.dropna())
 
 
@@ -288,12 +384,29 @@ def stock_analysis():
         default_asset = "TATAMOTORS" if asset == 'Stock' else "NIFTY 50"
         stock_name = st.selectbox("Select Stock Symbol", tables_list, index=tables_list.index(default_asset))
 
+        timeframe_options = get_timeframe_options(data_src)
+        timeframe_labels = [label for label, _ in timeframe_options]
+        default_primary_label = 'Daily' if 'Daily' in timeframe_labels else timeframe_labels[0]
+        primary_label = st.selectbox("Primary Timeframe", timeframe_labels, index=timeframe_labels.index(default_primary_label))
+        primary_value = get_timeframe_value(primary_label, timeframe_options)
+
+        data_identifier = sanitize_sql_symbol(stock_name) if data_src == 'SQL' else stock_name
         if data_src == 'SQL':
-            timeframe_option = st.selectbox("Timeframe", ('Daily', 'Weekly', 'Monthly', 'Yearly'))
-            df = extract_stock_data(stock_name.replace("-", "_").replace(" ", "_"), data_source=data_src, period_sql=timeframe_option)
-        elif data_src == 'Upstox':
-            timeframe_option = st.selectbox("Timeframe", ('1minute', 'day', 'week', 'month'))
-            df = extract_stock_data(stock_name, data_source='Upstox', period_upstox=timeframe_option)
+            df = extract_stock_data(data_identifier, data_source='SQL', period_sql=primary_value)
+        else:
+            df = extract_stock_data(data_identifier, data_source='Upstox', period_upstox=primary_value)
+
+        max_additional = max(0, len(timeframe_labels) - 1)
+        previous_count = min(len(st.session_state.additional_chart_timeframes), max_additional)
+        default_extra = previous_count if previous_count else min(2, max_additional)
+        additional_chart_count = st.slider("Additional Charts", 0, max_additional, default_extra, help="Add parallel charts with independent timeframes.") if max_additional > 0 else 0
+        current_configs = st.session_state.additional_chart_timeframes[:additional_chart_count]
+        available_defaults = [label for label in timeframe_labels if label != primary_label] or timeframe_labels
+        idx = 0
+        while len(current_configs) < additional_chart_count:
+            current_configs.append(available_defaults[idx % len(available_defaults)])
+            idx += 1
+        st.session_state.additional_chart_timeframes = current_configs
 
         data_replay = st.checkbox("Replay Data", value=True)
 
@@ -340,10 +453,23 @@ def stock_analysis():
     total_height = 700 + (num_subcharts * 100)
     chart_placeholder = st.empty()
 
+    timeframe_lookup = {label: value for label, value in timeframe_options}
+    theme_name = 'dark' if dark_theme else 'default'
+    subchart_height = 450
+
+    def fetch_dataframe_for_label(label):
+        value = timeframe_lookup[label]
+        if data_src == 'SQL':
+            return extract_stock_data(data_identifier, data_source='SQL', period_sql=value).copy()
+        return extract_stock_data(data_identifier, data_source='Upstox', period_upstox=value).copy()
+
     def update_chart_data():
         replay_data = df.iloc[:st.session_state.current_replay_index + 1].copy()
+        if replay_data.empty:
+            replay_data = df.copy()
         replay_data = calculate_stock_technical_summary(replay_data, st.session_state.indicators)
         with chart_placeholder.container():
+            st.markdown(f"**Primary - {primary_label}**")
             chart_obj = StreamlitChart(height=total_height, toolbox=True, scale_candles_only=True)
             if apply_patterns:
                 support_data, resistance_data = calculate_support_resistance(
@@ -356,7 +482,29 @@ def stock_analysis():
                 for res_type, res_list in resistance_data.items():
                     for res_level in res_list:
                         chart_obj.horizontal_line(res_level, color=res_colour_codes.get(res_type), width=1)
-            create_tv_chart(chart_obj, stock_name, replay_data, theme='dark' if dark_theme else 'default')
+            create_tv_chart(chart_obj, stock_name, replay_data, theme=theme_name)
+
+            for idx, label in enumerate(st.session_state.additional_chart_timeframes):
+                st.divider()
+                selector_cols = st.columns([0.7, 0.3])
+                
+                with selector_cols[1]:
+                    selected_label = st.selectbox(
+                        "Timeframe",
+                        timeframe_labels,
+                        index=timeframe_labels.index(label),
+                        key=f"additional_timeframe_selector_{idx}"
+                    )
+
+                with selector_cols[0]:
+                    st.markdown(f"**Chart {idx + 2} - {selected_label}**")
+                if selected_label != label:
+                    st.session_state.additional_chart_timeframes[idx] = selected_label
+                    label = selected_label
+                sub_df = fetch_dataframe_for_label(label)
+                sub_df = calculate_stock_technical_summary(sub_df, st.session_state.indicators)
+                sub_chart = StreamlitChart(height=subchart_height, toolbox=True, scale_candles_only=True)
+                create_tv_chart(sub_chart, stock_name, sub_df, theme=theme_name)
 
 
     with replay_button:

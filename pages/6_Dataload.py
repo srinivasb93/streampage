@@ -486,7 +486,6 @@ def run_scheduled_task(task_name, callable_obj, batch_id=None):
         elif check_date in holidays:
             reason = 'trading holiday'
 
-        reason = None # for testing
         if reason:
             skip_msg = f'Skipped scheduled run because today is a {reason}.'
             log_task_status(task_name, 'Skipped', now, now, skip_msg, batch_id)

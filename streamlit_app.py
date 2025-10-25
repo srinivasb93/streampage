@@ -2,6 +2,7 @@ import logging
 import streamlit as st
 
 from common_utils.logging_utils import configure_logging
+from common_utils.auth import require_authentication, logout
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -11,6 +12,9 @@ st.set_page_config(page_title="Analytics Dashboard",
                    page_icon=":money_bag:",
                    layout="wide",
                    initial_sidebar_state="expanded")
+
+# Require authentication for this page
+require_authentication()
 
 
 @st.cache_data
@@ -62,4 +66,10 @@ with col3:
     """)
 
 st.sidebar.success("Select a page above to begin.")
+
+# Add logout button in sidebar
+st.sidebar.divider()
+if st.sidebar.button("🚪 Logout", type="secondary"):
+    logout()
+st.sidebar.caption(f"Logged in as: {st.session_state.user_email}")
 

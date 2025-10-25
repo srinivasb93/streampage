@@ -33,6 +33,51 @@ except Exception:
     def get_script_run_ctx():
         return None
 
+def bulk_update_stock_daily_upstox(instrument_keys):
+    """Perform a bulk Upstox update combining historical and intraday data."""
+    try:
+        success_count = 0
+        fail_count = 0
+        failed_stocks = []
+        logger.debug(f"Bulk updating Upstox data for {instrument_keys}")
+        data = upstox_utils.get_market_quote(instrument_keys, mode='ohlc')
+        logger.debug(f"OHLC Data fetched on date: {dt.datetime.now()}: {data}")
+        for symbol, row_data in data.items():
+            df = pd.DataFrame([row_data])
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.normalize()
+            # check if the timestamp is already present in the table. If present ignore the row and continue. 
+            if not df.empty:
+                last_date_query = text(f'SELECT MAX("timestamp") FROM public."{symbol}"')
+                engine = rd.get_engine('nsedata')
+                with engine.connect() as conn:
+                    last_date_result = conn.execute(last_date_query).scalar_one_or_none()
+                if last_date_result is not None:
+                    df = df[df['timestamp'] > last_date_result]
+                    if df.empty:
+                        logger.info(f"No new data to update for {symbol}")
+                        continue
+
+            msg = rd.load_sql_data(
+                data_to_load=df,
+                table_name=symbol,
+                load_type='append',
+                database='nsedata',
+                schema='public'
+            )
+            if 'success' in msg.lower():
+                logger.info(f"Successfully updated Upstox data for {symbol}")
+                success_count += 1
+            else:
+                logger.error(f"Error updating Upstox data for {symbol}: {msg}")
+                fail_count += 1
+                failed_stocks.append({'symbol': symbol, 'error': msg})
+        if success_count == 0 and fail_count == 0:
+            return "No new data to update for any stock", 0, 0, []
+        return f"Successfully updated Upstox data for {success_count} symbols, Failed: {fail_count}", success_count, fail_count, failed_stocks
+    except Exception as exc:
+        logger.exception('Error updating Upstox data for %s', instrument_keys)
+        return f"Error fetching Upstox data : {str(exc)}", 0, 0, []
+
 def update_stock_daily_upstox(symbol, instrument_key):
     """Perform an incremental Upstox update combining historical and intraday data."""
     try:
@@ -46,36 +91,44 @@ def update_stock_daily_upstox(symbol, instrument_key):
 
         start_date_obj = last_date_result.date() + dt.timedelta(days=1)
         today = dt.date.today()
+        # check if today is a weekend (Saturday or Sunday) or a holiday
+        if today.weekday() >= 5 or today in get_trading_holidays():
+            end_date_obj = today - dt.timedelta(days=1 if today.weekday() == 5 else 2) 
+        else:
+            end_date_obj = today
 
-        if start_date_obj > today:
+        if start_date_obj > end_date_obj:
             return f"Data for '{symbol}' is already up to date."
 
         frames = []
-        hist_end_date = today - dt.timedelta(days=1)
-        if start_date_obj <= hist_end_date:
+        if start_date_obj < end_date_obj:
             hist_df = upstox_utils.get_historical_data(
                 instrument_token=instrument_key,
                 interval='days',
                 unit='1',
                 start_date=start_date_obj.strftime('%Y-%m-%d'),
-                end_date=hist_end_date.strftime('%Y-%m-%d')
+                end_date=end_date_obj.strftime('%Y-%m-%d')
             )
+
             if isinstance(hist_df, pd.DataFrame) and not hist_df.empty:
-                hist_df['timestamp'] = pd.to_datetime(hist_df['timestamp'], utc=True).dt.tz_convert(None)
+                hist_df['timestamp'] = pd.to_datetime(hist_df['timestamp']).dt.tz_localize(None)
                 hist_df = hist_df[hist_df['timestamp'].dt.date >= start_date_obj]
                 frames.append(hist_df)
 
-        intraday_df = upstox_utils.get_intraday_candle_data(instrument_key)
-        if isinstance(intraday_df, pd.DataFrame) and not intraday_df.empty:
-            intraday_df['timestamp'] = pd.to_datetime(intraday_df['timestamp'], utc=True).dt.tz_convert(None)
-            frames.append(intraday_df)
+        # Get intraday data only if start_date_obj is same as end_date_obj
+        if start_date_obj == end_date_obj:
+            intraday_df = upstox_utils.get_intraday_candle_data(instrument_key)
 
+            if isinstance(intraday_df, pd.DataFrame) and not intraday_df.empty:
+                intraday_df['timestamp'] = pd.to_datetime(intraday_df['timestamp']).dt.tz_localize(None)
+                frames.append(intraday_df)
+     
         if not frames:
             return f"No new data to update for '{symbol}'"
 
         combined_df = pd.concat(frames, ignore_index=True)
         combined_df.dropna(subset=['timestamp'], inplace=True)
-        combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], utc=True).dt.tz_convert(None)
+        combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp']).dt.tz_localize(None)
         combined_df = combined_df[combined_df['timestamp'].dt.date >= start_date_obj]
         combined_df.drop_duplicates(subset='timestamp', keep='last', inplace=True)
         combined_df.sort_values('timestamp', inplace=True)
@@ -132,7 +185,7 @@ def display_toaster(status, msg, custom_icon=':material/info_i:', use_default_ic
         st.info(msg)
 
 
-def run_batch_daily_stock_update(data_source='NSE'):
+def run_batch_daily_stock_update(data_source='NSE', bulk_update_via_upstox=False):
     """Run the batch daily stock update without UI dependencies."""
     summary = {"success": 0, "failed": [], "data_source": data_source}
     try:
@@ -153,6 +206,20 @@ def run_batch_daily_stock_update(data_source='NSE'):
     if data_source == 'Upstox':
         try:
             instruments_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
+            if bulk_update_via_upstox:
+                logger.info("Bulk updating Upstox data for all stocks")
+                stocks_to_update = rd.get_table_data("nsedata", "STOCKS_IN_DB")
+                instruments_list = stocks_to_update['instrument_token'].tolist()
+                instrument_keys = ','.join(instruments_list)
+                result, success_count, fail_count, failed_stocks = bulk_update_stock_daily_upstox(instrument_keys)
+                summary['success'] += success_count
+                summary['failed'].extend(failed_stocks)
+                summary['message'] = f"Bulk Upstox data update complete. Success: {summary['success']}, Failed: {len(summary['failed'])}"
+                logger.info(summary['message'])
+                if summary['failed']:
+                    logger.warning("Failed Upstox updates: %s", summary['failed'])
+                return summary
+
         except Exception as exc:
             msg = f"Failed to fetch instruments for Upstox batch update: {exc}"
             logger.exception(msg)
@@ -161,6 +228,7 @@ def run_batch_daily_stock_update(data_source='NSE'):
 
     for _, row in stocks_df.iterrows():
         symbol = row.get('SYMBOL')
+
         if not symbol:
             continue
         try:
@@ -270,7 +338,7 @@ def _perform_data_load_core(data_type='Equity', load_freq='Daily', **kwargs):
     elif data_type == 'MF' and load_freq == 'Historical':
         load_status = mf_hist_load.extract_and_load_latest_mf_hist_data()
     elif data_type in ['Index_data_load', "Index_Stocks_data_load", "Stocks_Ref_data_load", "FnO_snapshot_load",
-                       "NSE_Events_load", "ETF_data_load", "Bhavcopy_data_load"]:
+                       "NSE_Events_load", "ETF_data_load", "Bhavcopy_data_load", "Index_pe_pb_div_load"]:
         if data_type == 'Bhavcopy_data_load':
             # Date should be the previous business day if present time is before 18:00 and today's date if after 18:00
             # After applying the above condition, if the date is a weekend, then the date should be the previous business day
@@ -325,7 +393,7 @@ def fetch_stocks_data(data_type='Daily', equity_type='Stocks', bhav_copy=False,
         return rd.get_table_data(selected_table='NSE_EVENTS')
 
     if bhav_copy:
-        table = 'BHAVCOPY' if equity_type == 'Stocks' else 'BHAVCOPY_INDICES'
+        table = 'BHAVCOPY' if equity_type == 'Stocks' else 'NSE_INDICES_DATA'
         return rd.get_table_data(selected_table=table, selected_database='nsedata')
 
     stock_list_df = rd.get_table_data(selected_table='STOCKS_IN_DB', selected_database='nsedata')
@@ -340,14 +408,14 @@ def fetch_stocks_data(data_type='Daily', equity_type='Stocks', bhav_copy=False,
     for stock_name in stocks_list:
 
         table_name_with_suffix = f'"{stock_name}{stock_suffix}"'
-        count_clause = f"""(SELECT count(*) FROM public.{table_name_with_suffix} WHERE timestamp >= '{fetch_date}') as "Row_Count",""" if fetch_count else ""
+        count_clause = f"""(SELECT count(*) FROM public.{table_name_with_suffix.replace("-", "_")} WHERE timestamp >= '{fetch_date}') as "Row_Count",""" if fetch_count else ""
 
         union_queries.append(
             f"""
                 (SELECT 
                     '{stock_name}' as "Symbol",
                     {count_clause}
-                    * FROM public.{table_name_with_suffix}
+                    * FROM public.{table_name_with_suffix.replace("-", "_")}
                 ORDER BY timestamp DESC 
                 LIMIT 1)
                 """
@@ -527,12 +595,9 @@ INDEX_DATA_LOAD_TASKS = [
 
 def run_all_index_data_load_tasks():
     summary = {'success': 0, 'failed': []}
-    today = dt.date.today()
-    date_str = today.strftime('%d-%m-%Y')
     for data_type in INDEX_DATA_LOAD_TASKS:
         try:
-            kwargs = {'date': date_str if data_type == 'Bhavcopy_data_load' else today}
-            result = perform_data_load(data_type=data_type, load_freq='Daily', **kwargs)
+            result = perform_data_load(data_type=data_type, load_freq='Daily')
             message, is_success = normalise_task_result(result)
             if is_success:
                 summary['success'] += 1
@@ -551,7 +616,7 @@ SCHEDULE_TASK_DEFINITIONS = [
     {
         'name': 'Daily Stock Update',
         'default_time': '16:00',
-        'callable': lambda: run_batch_daily_stock_update()
+        'callable': lambda: run_batch_daily_stock_update(data_source='Upstox', bulk_update_via_upstox=True)
     },
     {
         'name': 'Daily Index & Sector Update',
@@ -849,7 +914,7 @@ def load_historical_stock_data_in_chunks(stock_symbol, instrument_key):
                 data_chunk1['timestamp'] = data_chunk1['timestamp'].dt.tz_localize(None)
                 load_msg1 = rd.load_sql_data(
                     data_to_load=data_chunk1,
-                    table_name=stock_symbol,
+                    table_name=stock_symbol.replace(' ', '_'),
                     load_type='replace',  # Replace table with the first chunk
                     database='nsedata',
                     schema='public'
@@ -879,7 +944,7 @@ def load_historical_stock_data_in_chunks(stock_symbol, instrument_key):
                 load_type = 'replace' if not chunk1_loaded else 'append'
                 load_msg2 = rd.load_sql_data(
                     data_to_load=data_chunk2,
-                    table_name=stock_symbol,
+                    table_name=stock_symbol.replace(' ', '_'),
                     load_type=load_type,
                     database='nsedata',
                     schema='public'
@@ -949,7 +1014,7 @@ def dataload():
 
             sch_cols = st.columns([1, 1])
             with sch_cols[0]:
-                if st.button("Reset Times to Default", use_container_width=True):
+                if st.button("Reset Times to Default", width='content'):
                     st.session_state['schedule_config'] = get_default_schedule_config()
                     schedule_config = get_schedule_config()
                     st.toast('Schedule times reset to defaults.', icon=':material/history:')
@@ -990,15 +1055,15 @@ def dataload():
 
             manage_cols = st.columns(2)
             with manage_cols[0]:
-                if st.button("Schedule/Resume Selected Task", use_container_width=True, key='btn_schedule_selected'):
+                if st.button("Schedule/Resume Selected Task", width='content', key='btn_schedule_selected'):
                     scheduled_time = schedule_task_job(management_task, get_schedule_config().get(management_task))
                     st.success(f"{management_task} scheduled at {scheduled_time}.")
             with manage_cols[1]:
-                if st.button("Pause Selected Task", use_container_width=True, key='btn_pause_selected'):
+                if st.button("Pause Selected Task", width='content', key='btn_pause_selected'):
                     cancel_task_job(management_task)
                     st.info(f"{management_task} paused.")
 
-            if st.button("Refresh Trading Holidays", use_container_width=True, key='btn_refresh_holidays'):
+            if st.button("Refresh Trading Holidays", width='content', key='btn_refresh_holidays'):
                 try:
                     holidays = get_trading_holidays(force_refresh=True)
                     st.success(f"Holiday calendar refreshed ({len(holidays)} dates).")
@@ -1006,11 +1071,11 @@ def dataload():
                     st.error(f"Failed to refresh holidays: {exc}")
 
             st.divider()
-            if st.button("Schedule All Tasks", use_container_width=True, key='btn_schedule_all'):
+            if st.button("Schedule All Tasks", width='content', key='btn_schedule_all'):
                 schedule_data_loads(st.session_state.get('schedule_config'))
                 st.success("All tasks have been scheduled with the updated timetable!")
 
-            if st.button("Clear All Schedules", use_container_width=True, key='btn_clear_all'):
+            if st.button("Clear All Schedules", width='content', key='btn_clear_all'):
                 schedule.clear()
                 cancel_all_scheduled_jobs()
                 st.warning("All schedules have been cleared!")
@@ -1032,7 +1097,7 @@ def dataload():
 
         history_button_cols = st.columns([0.2, 0.8])
         with history_button_cols[0]:
-            load_history = st.button("Load History", use_container_width=True, key='btn_load_history')
+            load_history = st.button("Load History", width='content', key='btn_load_history')
 
         if history_error:
             st.error(history_error)
@@ -1044,7 +1109,7 @@ def dataload():
             else:
                 hist_cols = st.columns([.85, .15])
                 with hist_cols[0]:
-                    st.dataframe(history_df, use_container_width=False, hide_index=True)
+                    st.dataframe(history_df, width='content', hide_index=True)
                 with hist_cols[1]:
                     status_counts = history_df['status'].value_counts()
                     st.write("**Status summary:**")
@@ -1082,7 +1147,7 @@ def dataload():
             bhavcopy_date = st.date_input("Bhavcopy Date", value=dt.date.today(), max_value=dt.date.today())
         
         # Execution button
-        if st.button(f"Execute {selected_task}", use_container_width=True):
+        if st.button(f"Execute {selected_task}", width='content'):
             if selected_task == "All Tasks":
                 # Execute all tasks in sequence
                 with st.status("Executing all scheduled tasks...", expanded=True) as status:
@@ -1150,7 +1215,7 @@ def dataload():
                     # Display summary
                     st.markdown("### 📋 Execution Summary")
                     summary_df = pd.DataFrame(list(task_results.items()), columns=['Task', 'Status'])
-                    st.dataframe(summary_df, use_container_width=True)
+                    st.dataframe(summary_df, width='content')
                     
                     success_count = sum(1 for status in task_results.values() if status == "Success")
                     total_count = len(task_results)
@@ -1180,7 +1245,7 @@ def dataload():
                         
                         status.update(label=f"{selected_task} completed!", state="complete")
                         
-                        if "success" in str(result):
+                        if "success" in str(result).lower():
                             st.success(f"✅ {selected_task} completed successfully!")
                         else:
                             st.warning(f"⚠️ {selected_task} completed with issues: {result}")
@@ -1196,7 +1261,7 @@ def dataload():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("View Next Scheduled Tasks", use_container_width=True):
+            if st.button("View Next Scheduled Tasks", width='content'):
                 upcoming = get_upcoming_scheduled_tasks()
                 if upcoming:
                     st.write("**Next scheduled tasks:**")
@@ -1207,12 +1272,12 @@ def dataload():
                     st.info("No tasks are currently scheduled.")
         
         with col2:
-            if st.button("Pause Scheduler", use_container_width=True):
+            if st.button("Pause Scheduler", width='content'):
                 # This would require implementing a pause mechanism
                 st.warning("Scheduler pause functionality needs to be implemented.")
         
         with col3:
-            if st.button("Resume Scheduler", use_container_width=True):
+            if st.button("Resume Scheduler", width='content'):
                 # This would require implementing a resume mechanism
                 st.info("Scheduler resume functionality needs to be implemented.")
 
@@ -1279,7 +1344,8 @@ def dataload():
                                                         "FnO_snapshot_load",
                                                         "NSE_Events_load",
                                                         "ETF_data_load",
-                                                        "Bhavcopy_data_load"],)
+                                                        "Bhavcopy_data_load",
+                                                        "Index_pe_pb_div_load"],)
                 
                 # Add date selection for Bhavcopy
                 if index_load_type == 'Bhavcopy_data_load':
@@ -1291,46 +1357,105 @@ def dataload():
                 if st.button('Load Index Data'):
                     with st.spinner(f"{index_load_type} in progress.."):
                         perform_data_load(data_type=index_load_type)
+            
+            st.markdown('---')
+            row_cols = st.columns(2)
+            with row_cols[0]:
+                st.markdown('### Update Portfolio in the SQL database..')
+                # Button to update portfolio in SQL Server
+                if st.button('Update Portfolio'):
+                    # Replace with actual SQL update logic
+                    current_date = dt.date.today()
+                    with st.spinner("Updating portfolio in SQL Server..."):
+                        date_day = current_date.strftime("%A")
+                        if date_day == 'Sunday':
+                            for_date = current_date - dt.timedelta(days=2)
+                        elif date_day == 'Saturday':
+                            for_date = current_date - dt.timedelta(days=1)
+                        elif date_day == 'Monday':
+                            if dt.datetime.now().hour < 19:
+                                for_date = current_date - dt.timedelta(days=3)
+                            else:
+                                for_date = current_date
+                        else:
+                            if dt.datetime.now().hour < 19:
+                                for_date = current_date - dt.timedelta(days=1)
+                            else:
+                                for_date = current_date
+                        pf_load_msg = update_portfolio.update_overall_portfolio_summary(fetch_type='load_and_fetch',
+                                                                                        for_date=for_date,
+                                                                                        mf_snap_reload=False,
+                                                                                        bhavcopy_reload=False)
+                        load_status = 'Success' if 'success' in pf_load_msg else "Failure"
+                        display_toaster(status=load_status, msg=pf_load_msg)
+            with row_cols[1]:
+                # Check if instrument_token for each symbol in STOCKS_IN_DB is matching with instrument_token for corresponding trading_symbol in instruments table in trading_db
+                # Read data from STOCKS_IN_DB and instruments table in trading_db. do inner join on trading_symbol and SYMBOL and check if instrument_token is matching. No for loop required.
+                stocks_to_update = rd.get_table_data("nsedata", "STOCKS_IN_DB")
+                instruments_df = rd.get_table_data("trading_db", "instruments")
+
+                if st.button('Check instrument_token matching'):
+                    with st.spinner("Checking instrument_token matching..."):
+                        if not stocks_to_update.empty and not instruments_df.empty:
+                            joined_df = pd.merge(stocks_to_update, instruments_df, left_on='SYMBOL', right_on='trading_symbol', how='inner')
+                            joined_df = joined_df[joined_df['instrument_token_x'] != joined_df['instrument_token_y']]
+                            joined_df = joined_df[['trading_symbol', 'instrument_token_x', 'instrument_token_y']]
+                            joined_df.rename(columns={'instrument_token_x': 'instrument_token_in_stocks_in_db', 'instrument_token_y': 'instrument_token_in_instruments_table'}, inplace=True)
+                            if joined_df.empty:
+                                st.success("No mismatching instrument_token found for any stock")
+                            else:
+                                st.dataframe(joined_df, width='content')
+                                st.warning("Mismatching instrument_token found for above stocks")
+                                symbols_to_update = joined_df['trading_symbol'].tolist()
+                                # Search for mismatched instrument_token in STOCKS_IN_DB and update the instrument_token
+                                for index, row in joined_df.iterrows():
+                                    symbol = row['trading_symbol']
+                                    instrument_token = row['instrument_token_in_instruments_table']
+                                    # Find the row in STOCKS_IN_DB where SYMBOL is matching with trading_symbol
+                                    stock_to_update = stocks_to_update[stocks_to_update['SYMBOL'] == symbol]
+                                    if not stock_to_update.empty:
+                                        stocks_to_update.loc[stock_to_update.index, 'instrument_token'] = instrument_token
+                                        stocks_to_update.loc[stock_to_update.index, 'last_updated'] = dt.datetime.now()
+                                        logger.info(f"Instrument_token updated successfully for {symbol}")
+                                    else:
+                                        st.warning(f"No stock found in STOCKS_IN_DB for {symbol}")
+                                rd.load_sql_data(data_to_load=stocks_to_update, table_name='STOCKS_IN_DB', load_type='replace', database='nsedata', schema='public')
+                                st.success(f"Instrument_token updated successfully for {symbols_to_update}!")
+                        else:
+                            st.error("No stocks found in STOCKS_IN_DB or instruments table in trading_db")
 
             st.markdown('---')
-            st.markdown('### Update Portfolio in the SQL database..')
-            # control_data = rd.get_table_data(selected_database="analytics", selected_table="analytics_LOAD_CONTROL")
-            # st.write(f":rainbow[Bhav last updated on ***{control_data['BHAV_UPDATED_ON'].iloc[0]}*** "
-            #          f"for the date *{control_data['BHAV_DATE'].iloc[0]}*. Status - *{control_data['BHAV_LOAD'].iloc[0]}*]")
-            #
-            # st.write(f":rainbow[MF Snapshot last updated on ***{control_data['MFSNAP_UPDATED_ON'].iloc[0]}*** "
-            #          f"for the date *{control_data['MF_SNAP_DATE'].iloc[0]}*. Status - *{control_data['MF_SNAP_LOAD'].iloc[0]}*]")
-            #
-            # st.write(f":rainbow[Portfolio last updated on ***{control_data['PF_UPDATED_ON'].iloc[0]}***."
-            #          f" Status - *{control_data['BHAV_LOAD'].iloc[0]}*]")
-
-            # Button to update portfolio in SQL Server
-            if st.button('Update Portfolio'):
-                # Replace with actual SQL update logic
-                current_date = dt.date.today()
-                with st.spinner("Updating portfolio in SQL Server..."):
-                    date_day = current_date.strftime("%A")
-                    if date_day == 'Sunday':
-                        for_date = current_date - dt.timedelta(days=2)
-                    elif date_day == 'Saturday':
-                        for_date = current_date - dt.timedelta(days=1)
-                    elif date_day == 'Monday':
-                        if dt.datetime.now().hour < 19:
-                            for_date = current_date - dt.timedelta(days=3)
-                        else:
-                            for_date = current_date
+            st.markdown('### Check and remove duplicate data from the tables referred in STOCKS_IN_DB')
+            if st.button('Check and remove duplicate data'):
+                with st.spinner("Checking and removing duplicate data..."):
+                    stocks_to_update = rd.get_table_data("nsedata", "STOCKS_IN_DB")
+                    duplicate_count = 0
+                    fail_count = 0
+                    failed_stocks = []
+                    if not stocks_to_update.empty:
+                        for index, row in stocks_to_update.iterrows():
+                            symbol = row['SYMBOL']
+                            table_data = rd.get_table_data("nsedata", f"{symbol}")
+                            if not table_data.empty:
+                                # check for duplicates first and go for remove and reload only if duplicates are found
+                                if table_data.duplicated(subset='timestamp').any():
+                                    table_data.drop_duplicates(subset='timestamp', keep='last', inplace=True)
+                                    table_data.sort_values('timestamp', inplace=True)
+                                    rd.load_sql_data(data_to_load=table_data, table_name=symbol, load_type='replace', database='nsedata', schema='public')
+                                    logger.info(f"Duplicate data removed for {symbol}...")
+                                    duplicate_count += 1
+                                else:
+                                    logger.info(f"No duplicate data found for {symbol}...")
+                            else:
+                                fail_count += 1
+                                failed_stocks.append({'symbol': symbol, 'error': "No data found for the stock"})
+                                st.write(f"No data found for {symbol}...")
+                    st.success("Duplicate data removed successfully!")
+                    st.write(f"Duplicate data removed for {duplicate_count} stocks, Failed: {fail_count}")
+                    if failed_stocks:
+                        st.dataframe(failed_stocks, width='content')
                     else:
-                        if dt.datetime.now().hour < 19:
-                            for_date = current_date - dt.timedelta(days=1)
-                        else:
-                            for_date = current_date
-                    pf_load_msg = update_portfolio.update_overall_portfolio_summary(fetch_type='load_and_fetch',
-                                                                                    for_date=for_date,
-                                                                                    mf_snap_reload=False,
-                                                                                    bhavcopy_reload=False)
-                    load_status = 'Success' if 'success' in pf_load_msg else "Failure"
-                    display_toaster(status=load_status, msg=pf_load_msg)
-
+                        st.success("No duplicate data found for any stock")
         with load_tabs[1]:
             st.markdown("##### Historical Stock Data Loader")
             data_src_cols = st.columns(5)
@@ -1352,8 +1477,10 @@ def dataload():
                                                 index=0, 
                                                 key="batch_data_source",
                                                 help="Choose the source for daily batch updates")
+
+                bulk_update_via_upstox = st.checkbox("Bulk Update via Upstox", value=False, help="Use this option only for latest one day data update alone")
                 
-                if st.button("Update All Stocks Daily", use_container_width=True):
+                if st.button("Update All Stocks Daily", width='content'):
                     stocks_to_update = rd.get_table_data("nsedata", "STOCKS_IN_DB")
                     if not stocks_to_update.empty:
                         success_count = 0
@@ -1361,98 +1488,98 @@ def dataload():
                         failed_stocks = []
                         
                         with st.status("Performing batch daily update for stocks...", expanded=True) as status:
-                            for index, row in stocks_to_update.iterrows():
-                                symbol = row['SYMBOL']
-                                if symbol not in ['VBL', 'BSOFT', 'PGEL']:
-                                    continue
-                                st.write(f"Updating {symbol}...")
-                                
-                                if batch_data_source == 'NSE':
-                                    result = rd.update_stock_daily(symbol)
-                                else:  # Upstox
-                                    # For Upstox, we need to get the instrument key
-                                    if "instruments" not in st.session_state:
-                                        instruments_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
-                                        st.session_state.instruments = instruments_df
-                                    
-                                    try:
-                                        instrument_key = st.session_state.instruments[
-                                            st.session_state.instruments['trading_symbol'] == symbol]['instrument_token'].iloc[0]
-                                        result = update_stock_daily_upstox(symbol, instrument_key)
-                                    except Exception as e:
-                                        result = f"Error getting instrument key for {symbol}: {str(e)}"
-                                
-                                if "success" in result or "up to date" in result:
-                                    success_count += 1
-                                else:
-                                    fail_count += 1
-                                    failed_stocks.append({'symbol': symbol, 'error': result})
-                                
-                                display_toaster('Success' if 'success' in result or 'up to date' in result else 'Failure',
-                                                result)
-
-                            status.update(label=f"Stock update complete! Success: {success_count}, Failed: {fail_count}",
-                                          state="complete")
-                            
-                            # Store failed stocks in session state for retry
-                            if failed_stocks:
-                                st.session_state.failed_stocks = failed_stocks
-                                st.warning(f"{fail_count} stocks failed to update. Use the retry button below to retry failed stocks.")
-                    else:
-                        st.warning(
-                            "No stocks found in the 'STOCKS_IN_DB' registry. Please load historical data for a stock first.")
-                
-                # Add retry mechanism for failed stocks
-                if 'failed_stocks' in st.session_state and st.session_state.failed_stocks:
-                    st.markdown("---")
-                    st.subheader("Retry Failed Updates")
-                    st.write(f"Found {len(st.session_state.failed_stocks)} failed stocks:")
-                    
-                    # Display failed stocks
-                    failed_df = pd.DataFrame(st.session_state.failed_stocks)
-                    st.dataframe(failed_df, use_container_width=True)
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("Retry All Failed", use_container_width=True):
-                            retry_success = 0
-                            retry_failed = []
-                            
-                            with st.status("Retrying failed stocks...", expanded=True) as retry_status:
-                                for failed_stock in st.session_state.failed_stocks:
-                                    symbol = failed_stock['symbol']
-                                    st.write(f"Retrying {symbol}...")
+                            if bulk_update_via_upstox:
+                                instruments_list = stocks_to_update['instrument_token'].tolist()
+                                instrument_keys = ','.join(instruments_list)
+                                result, success_count, fail_count, failed_stocks = bulk_update_stock_daily_upstox(instrument_keys)
+                            else:
+                                for index, row in stocks_to_update.iterrows():
+                                    symbol = row['SYMBOL']
+                                    st.write(f"Updating {symbol}...")
                                     
                                     if batch_data_source == 'NSE':
                                         result = rd.update_stock_daily(symbol)
                                     else:  # Upstox
+                                        # For Upstox, we need to get the instrument key
+                                        if "instruments" not in st.session_state:
+                                            instruments_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
+                                            st.session_state.instruments = instruments_df
+                                        
                                         try:
                                             instrument_key = st.session_state.instruments[
                                                 st.session_state.instruments['trading_symbol'] == symbol]['instrument_token'].iloc[0]
                                             result = update_stock_daily_upstox(symbol, instrument_key)
                                         except Exception as e:
                                             result = f"Error getting instrument key for {symbol}: {str(e)}"
-                                    
+
                                     if "success" in result or "up to date" in result:
-                                        retry_success += 1
+                                        success_count += 1
                                     else:
-                                        retry_failed.append({'symbol': symbol, 'error': result})
+                                        fail_count += 1
+                                        failed_stocks.append({'symbol': symbol, 'error': result})
+                                
+                            display_toaster('Success' if 'success' in result.lower() or 'up to date' in result.lower() else 'Failure',
+                                            result)
+                                
+                            status.update(label=f"Stock update complete! Success: {success_count}, Failed: {fail_count}",
+                                        state="complete")
+                            
+                            # Store failed stocks in session state for retry
+                            if failed_stocks:
+                                st.session_state.failed_stocks = failed_stocks
+                                st.warning(f"{fail_count} stocks failed to update. Use the retry button below to retry failed stocks.")
+                            else:
+                                st.session_state.failed_stocks = []
+
+                    if st.session_state.failed_stocks:
+                        st.subheader("Retry Failed Updates")
+                        st.write(f"Found {len(st.session_state.failed_stocks)} failed stocks:")
+                        
+                        # Display failed stocks
+                        failed_df = pd.DataFrame(st.session_state.failed_stocks)
+                        st.dataframe(failed_df, width='content')
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Retry All Failed", width='content'):
+                                retry_success = 0
+                                retry_failed = []
+                                
+                                with st.status("Retrying failed stocks...", expanded=True) as retry_status:
+                                    for failed_stock in st.session_state.failed_stocks:
+                                        symbol = failed_stock['symbol']
+                                        st.write(f"Retrying {symbol}...")
+                                        
+                                        if batch_data_source == 'NSE':
+                                            result = rd.update_stock_daily(symbol)
+                                        else:  # Upstox
+                                            try:
+                                                instrument_key = st.session_state.instruments[
+                                                    st.session_state.instruments['trading_symbol'] == symbol]['instrument_token'].iloc[0]
+                                                result = update_stock_daily_upstox(symbol, instrument_key)
+                                            except Exception as e:
+                                                result = f"Error getting instrument key for {symbol}: {str(e)}"
+                                        
+                                        if "success" in result or "up to date" in result:
+                                            retry_success += 1
+                                        else:
+                                            retry_failed.append({'symbol': symbol, 'error': result})
+                                        
+                                        display_toaster('Success' if 'success' in result or 'up to date' in result else 'Failure',
+                                                        result)
                                     
-                                    display_toaster('Success' if 'success' in result or 'up to date' in result else 'Failure',
-                                                    result)
-                                
-                                retry_status.update(label=f"Retry complete! Success: {retry_success}, Still Failed: {len(retry_failed)}",
-                                                  state="complete")
-                                
-                                # Update failed stocks list
-                                st.session_state.failed_stocks = retry_failed
-                                if not retry_failed:
-                                    st.success("All failed stocks have been successfully updated!")
-                    
-                    with col2:
-                        if st.button("Clear Failed List", use_container_width=True):
-                            st.session_state.failed_stocks = []
-                            st.rerun()
+                                    retry_status.update(label=f"Retry complete! Success: {retry_success}, Still Failed: {len(retry_failed)}",
+                                                    state="complete")
+                                    
+                                    # Update failed stocks list
+                                    st.session_state.failed_stocks = retry_failed
+                                    if not retry_failed:
+                                        st.success("All failed stocks have been successfully updated!")
+                        
+                        with col2:
+                            if st.button("Clear Failed List", width='content'):
+                                st.session_state.failed_stocks = []
+                                st.rerun()
             with load_cols[1]:
                 st.subheader("Batch Historical Load by Index/Sector")
 
@@ -1468,7 +1595,7 @@ def dataload():
 
                     selected_group = st.selectbox(
                         "Select an Index or Sector to load all its constituent stocks",
-                        options=index_sector_list,
+                        options=index_sector_list + ['STOCKS_IN_DB'],
                         index=None,
                         placeholder="Choose a group..."
                     )
@@ -1480,9 +1607,13 @@ def dataload():
                                                )
 
                     if selected_group and st.button(f"Load History for All Stocks in {selected_group}",
-                                                    use_container_width=True):
+                                                    width='content'):
                         # Filter stocks for the selected group
-                        stocks_to_load = all_stocks_df[all_stocks_df['STK_INDEX_SYMBOL'] == selected_group]
+                        if selected_group == 'STOCKS_IN_DB':
+                            stocks_in_db = rd.get_table_data(selected_table='STOCKS_IN_DB', selected_database='nsedata')["SYMBOL"].values.tolist()
+                            stocks_to_load = all_stocks_df[all_stocks_df['SYMBOL'].isin(stocks_in_db)]
+                        else:
+                            stocks_to_load = all_stocks_df[all_stocks_df['STK_INDEX_SYMBOL'] == selected_group]
 
                         with st.status(f"Loading history for {len(stocks_to_load)} stocks in {selected_group}...",
                                        expanded=True) as status:
@@ -1531,7 +1662,7 @@ def dataload():
                             instruments_df['trading_symbol'] == selected_stock]['instrument_token'].iloc[0]
 
                         st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button(f"Load History for {selected_stock}", use_container_width=True):
+                        if st.button(f"Load History for {selected_stock}", width='content'):
                             if data_source == 'NSE':
                                 start_date = dt.date(2007, 1, 1)
                                 end_date = dt.date.today() - dt.timedelta(days=1)
@@ -1554,16 +1685,14 @@ def dataload():
         with load_tabs[2]:
 
             st.markdown("##### NSE Index and Sector Data Loader")
-            st.info("Use this tool to load or update historical data for major NSE indices and sectors.")
 
             indices = fetch_indicies_sectors_list(required='indices')
             sectors = fetch_indicies_sectors_list(required='sectors')
             all_symbols = indices + sectors
 
             # --- NEW: Button for batch daily update ---
-            st.markdown("---")
             st.subheader("Batch Daily Update")
-            if st.button("Update All Indices & Sectors Daily", use_container_width=True):
+            if st.button("Update All Indices & Sectors Daily", width='content'):
                 success_count = 0
                 fail_count = 0
                 with st.status("Performing batch daily update...", expanded=True) as status:
@@ -1585,14 +1714,14 @@ def dataload():
 
             # UI for selection
             load_type = st.radio("Select Load Type", ["Full History", "Daily Update"], horizontal=True)
+            data_source = st.selectbox("Select Data Source", ["openchart", "nsepython", "jugaad_data"], index=0, placeholder="Choose a data source...")  
 
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns(2, width='stretch') 
             with col1:
-                selected_index = st.selectbox("Select Index", indices, index=None, placeholder="Choose an index...")
+                selected_index = st.selectbox("Select Index", ['All Indices'] + indices, index=None, placeholder="Choose an index...")
             with col2:
-                selected_sector = st.selectbox("Select Sector", sectors, index=None, placeholder="Choose a sector...")
+                selected_sector = st.selectbox("Select Sector", ['All Sectors'] + sectors, index=None, placeholder="Choose a sector...")
 
-            # Determine the selected symbol
             symbol_to_load = selected_index if selected_index else selected_sector
 
             if symbol_to_load:
@@ -1605,19 +1734,28 @@ def dataload():
                         end_date = st.date_input("End Date", dt.date.today())
                     with col_btn:
                         st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button(f"Load Full History for {symbol_to_load}", use_container_width=True):
+                        if st.button(f"Load Full History for {symbol_to_load}", width='content'):
                             with st.spinner(f"Loading full history for {symbol_to_load}..."):
-                                result = rd.load_index_sector_history(symbol_to_load, start_date, end_date)
-                                display_toaster('Success' if 'success' in result else 'Failure', result)
+                                if symbol_to_load == 'All Indices':
+                                    for index in indices:
+                                        result = rd.load_index_sector_history(index, start_date, end_date, data_source=data_source)
+                                        display_toaster('Success' if 'success' in result else 'Failure', result)
+                                elif symbol_to_load == 'All Sectors':
+                                    for sector in sectors:
+                                        result = rd.load_index_sector_history(sector, start_date, end_date, data_source=data_source)
+                                        display_toaster('Success' if 'success' in result else 'Failure', result)
+                                else:
+                                    result = rd.load_index_sector_history(symbol_to_load, start_date, end_date, data_source=data_source)
+                                    display_toaster('Success' if 'success' in result else 'Failure', result)
 
                 else:  # Daily Update
                     st.markdown(f"**Mode:** Incrementally update daily data for `{symbol_to_load}`.")
-                    if st.button(f"Run Daily Update for {symbol_to_load}", use_container_width=True):
+                    if st.button(f"Run Daily Update for {symbol_to_load}", width='content'):
                         with st.spinner(f"Updating {symbol_to_load}..."):
                             result = rd.update_index_sector_daily(symbol_to_load)
                             display_toaster('Success' if 'success' in result else 'Info', result)
             else:
-                st.warning("Please select an index or a sector to proceed.")
+                st.warning("Please select an index or a sector to proceed.", width='stretch')
         
         with load_tabs[3]:
             uploaded_file = st.file_uploader("Upload the file", type=['xlsx'])
@@ -1658,7 +1796,3 @@ def dataload():
 
 if __name__ == '__main__':
     dataload()
-
-
-
-

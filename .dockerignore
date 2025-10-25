@@ -3,6 +3,10 @@
 .git/
 .idea/
 .history/
+.kiro/
+.vscode/
+.pytest_cache/
+.cursor/
 
 # Python cache and build artifacts
 __pycache__/
@@ -12,8 +16,10 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+!vendor/dist/
 
 # Local env and logs
+*.ini
 .env
 *.log
 STREAM_DATA.log

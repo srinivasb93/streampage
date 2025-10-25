@@ -8,7 +8,6 @@ pyotp~=2.9.0
 schedule~=1.2.2
 numpy~=2.2.6
 pandas~=2.3.0
-lightweight-charts
 yfinance
 plotly~=6.1.2
 openpyxl~=3.1.5
@@ -19,8 +18,7 @@ scipy~=1.15.3
 dotenv~=0.9.9
 python-dotenv~=1.1.0
 joblib~=1.5.1
-ta~=0.11.0
-backtesting~=0.6.4
+backtesting~=0.6.5
 requests~=2.32.3
 openchart~=0.1.0
 nsepython~=2.97
@@ -33,3 +31,4 @@ bs4~=0.0.2
 beautifulsoup4~=4.13.4
 psycopg2-binary~=2.9
 jugaad-data
+bcrypt~=4.1.3

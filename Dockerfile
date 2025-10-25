@@ -10,8 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies
 COPY requirements.txt /app/requirements.txt
 COPY pandas_ta-0.4.67b0.tar.gz /app/pandas_ta-0.4.67b0.tar.gz
+COPY vendor/dist/lightweight_charts-5.1.0.post1+custom-py3-none-any.whl /tmp/lightweight_charts-5.1.0.post1+custom-py3-none-any.whl
 RUN pip install --upgrade pip setuptools wheel \
     && pip install --no-cache-dir /app/pandas_ta-0.4.67b0.tar.gz \
+    && pip install --no-cache-dir /tmp/lightweight_charts-5.1.0.post1+custom-py3-none-any.whl \
     && pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy application code

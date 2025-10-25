@@ -3,8 +3,12 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 from common_utils import read_write_sql_data as rd  # Replace with your actual module
+from common_utils.auth import require_authentication
 
 st.set_page_config(layout="wide")
+
+# Require authentication for this page
+require_authentication()
 
 # Function to calculate drawdown
 def calculate_drawdown(data):

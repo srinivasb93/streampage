@@ -2,7 +2,6 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 import logging
-
 from .logging_utils import configure_logging
 import configparser
 import os
@@ -12,8 +11,7 @@ import datetime as dt
 # Import all required data source libraries
 from openchart import NSEData
 from nsepython import index_history
-from jugaad_data import nse as jn
-from common_utils import upstox_utils # For stock data fallback
+
 
 # --- Configuration ---
 
@@ -102,8 +100,9 @@ def get_ref_tables(selected_database):
             FROM information_schema.tables 
             WHERE table_schema = 'ref' AND table_catalog = :db
         """)
-        conn = get_engine(selected_database)
-        ref_tables = pd.read_sql(query, conn, params={'db': selected_database})
+        engine = get_engine(selected_database)
+        with engine.connect() as conn:
+            ref_tables = pd.read_sql(query, conn, params={'db': selected_database})
         ref_data = ref_tables['table_name'].to_list()
         logger.info("Reference tables retrieved successfully.")
     except Exception as e:
@@ -121,8 +120,9 @@ def get_database_list():
             SELECT datname FROM pg_database
             WHERE datistemplate = false AND datname NOT IN ('postgres');
         """)
-        conn = get_engine()
-        databases = pd.read_sql(query, conn)
+        engine = get_engine()
+        with engine.connect() as conn:
+            databases = pd.read_sql(query, conn)
         return databases['datname'].to_list()
     except Exception as e:
         logger.error(f"Error retrieving database list: {e}")
@@ -138,8 +138,9 @@ def get_database_tables_list(database, schema='public'):
             SELECT tablename FROM pg_tables
             WHERE schemaname = :schema AND tableowner != 'postgres'
         """)
-        conn = get_engine(database)
-        tables = pd.read_sql(query, conn, params={'schema': schema})
+        engine = get_engine(database)
+        with engine.connect() as conn:
+            tables = pd.read_sql(query, conn, params={'schema': schema})
         return tables['tablename'].to_list()
     except Exception as e:
         logger.error(f"Error retrieving table list for database {database}: {e}")
@@ -293,17 +294,6 @@ def _format_nsepython_data(df):
     return df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
 
 
-def _format_jugaad_data(df):
-    """Standardizes the DataFrame from jugaad_data."""
-    df.reset_index(inplace=True)
-    df.rename(columns={'HistoricalDate': 'Date', 'OPEN': 'Open', 'HIGH': 'High', 'LOW': 'Low', 'CLOSE': 'Close',
-                       'VOLUME': 'Volume'}, inplace=True)
-    df['Date'] = pd.to_datetime(df['Date'])
-    if 'Volume' not in df.columns:
-        df['Volume'] = 0
-    return df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
-
-
 def _fetch_stock_historical_data_with_openchart(symbol, start_date, end_date, interval="1d"):
     """Tries fetching from openchart """
     try:
@@ -323,107 +313,99 @@ def _fetch_stock_historical_data_with_openchart(symbol, start_date, end_date, in
     return pd.DataFrame()
 
 
-def _fetch_index_data_with_fallback(symbol, start_date, end_date):
+def _fetch_index_data_with_fallback(symbol, start_date, end_date, data_source='openchart'):
     """
     Tries fetching from openchart first, using a dynamic symbol lookup.
     Falls back to other libraries if the primary source fails.
     """
     # 1. Primary: openchart (Provides Volume)
-    try:
-        logger.info(f"Attempting to fetch data for '{symbol}' using openchart.")
-        nse_instance = get_nse_data_instance()
-
-        # --- NEW: Dynamic Symbol Lookup ---
-        api_symbol = symbol  # Default to the input symbol
-
-        # Attempt to look up the symbol in the openchart master list
-        symbol_mapping = {"NIFTY100 LIQUID 15": "Nifty100 Liq 15",
-                          "NIFTY MIDCAP LIQUID 15": "Nifty Mid Liq 15",
-                          "NIFTY INDIA DIGITAL": "Nifty Ind Digital",
-                          "NIFTY SMALLCAP 250": "NIFTY SMLCAP 250",
-                          "NIFTY SMALLCAP 50": "NIFTY SMLCAP 50",
-                          "NIFTY SMALLCAP 100": "NIFTY SMLCAP 100",
-                          "NIFTY MIDSMALLCAP 400": "NIFTY MIDSML 400",
-                          "NIFTY MIDCAP SELECT": "NIFTY MID SELECT",
-                          "NIFTY LARGEMIDCAP 250": "NIFTY LARGEMID250",
-                          "NIFTY HEALTHCARE INDEX": "NIFTY HEALTHCARE",
-                          "NIFTY CONSUMER DURABLES": "NIFTY CONSR DURBL",
-                          "NIFTY FINANCIAL SERVICES": "Nifty Fin Service",
-                          "NIFTY PRIVATE BANK": "Nifty Pvt Bank",
-                          "NIFTY INFRASTRUCTURE": "Nifty Infra",
-                          "NIFTY SERVICES SECTOR": "Nifty Serv Sector",
-                          "NIFTY INDIA CONSUMPTION": "Nifty Consumption"
-                          }
-
+    if data_source == 'openchart':
         try:
-            # The master list is stored in the 'nse_data' attribute
-            master_df = nse_instance.nse_data
-            # Find the row where 'Name' matches the input symbol (case-insensitive)
-            if symbol in symbol_mapping.keys():
-                logger.info(f"Using mapped API symbol for '{symbol}': '{symbol_mapping[symbol]}'")
-                match = master_df[master_df['Name'].str.lower() == symbol_mapping[symbol].lower()]
-            else:
-                match = master_df[master_df['Name'].str.lower() == symbol.lower()]
-            if not match.empty:
-                # Get the corresponding 'Symbol' from that row
-                api_symbol = match['Symbol'].iloc[0]
-                logger.info(f"Found matching API symbol for '{symbol}': '{api_symbol}'")
-            else:
-                logger.warning(
-                    f"Could not find a matching symbol for '{symbol}' in openchart master. Using original name.")
-        except Exception as lookup_error:
-            logger.error(f"Error during symbol lookup for '{symbol}': {lookup_error}. Using original name.")
-        # --- End of New Logic ---
+            logger.info(f"Attempting to fetch data for '{symbol}' using openchart.")
+            nse_instance = get_nse_data_instance()
 
-        start_datetime = dt.datetime.combine(start_date, dt.datetime.min.time())
-        end_datetime = dt.datetime.combine(end_date, dt.datetime.max.time())
+            # --- NEW: Dynamic Symbol Lookup ---
+            api_symbol = symbol  # Default to the input symbol
 
-        raw_data_oc = nse_instance.historical(
-            symbol=api_symbol,  # Use the looked-up symbol
-            exchange='NSE',
-            start=start_datetime,
-            end=end_datetime,
-            interval='1d'
-        )
-        if not raw_data_oc.empty:
-            logger.info("openchart fetch successful.")
-            return _format_openchart_data(raw_data_oc)
-        logger.warning("openchart returned no data. Trying fallback 1: nsepython.")
-    except Exception as e_oc:
-        logger.error(f"openchart failed: {e_oc}. Trying fallback 1: nsepython.")
+            # Attempt to look up the symbol in the openchart master list
+            symbol_mapping = {"NIFTY100 LIQUID 15": "Nifty100 Liq 15",
+                            "NIFTY MIDCAP LIQUID 15": "Nifty Mid Liq 15",
+                            "NIFTY INDIA DIGITAL": "Nifty Ind Digital",
+                            "NIFTY SMALLCAP 250": "NIFTY SMLCAP 250",
+                            "NIFTY SMALLCAP 50": "NIFTY SMLCAP 50",
+                            "NIFTY SMALLCAP 100": "NIFTY SMLCAP 100",
+                            "NIFTY MIDSMALLCAP 400": "NIFTY MIDSML 400",
+                            "NIFTY MIDCAP SELECT": "NIFTY MID SELECT",
+                            "NIFTY LARGEMIDCAP 250": "NIFTY LARGEMID250",
+                            "NIFTY HEALTHCARE INDEX": "NIFTY HEALTHCARE",
+                            "NIFTY CONSUMER DURABLES": "NIFTY CONSR DURBL",
+                            "NIFTY FINANCIAL SERVICES": "Nifty Fin Service",
+                            "NIFTY PRIVATE BANK": "Nifty Pvt Bank",
+                            "NIFTY INFRASTRUCTURE": "Nifty Infra",
+                            "NIFTY SERVICES SECTOR": "Nifty Serv Sector",
+                            "NIFTY INDIA CONSUMPTION": "Nifty Consumption"
+                            }
+
+            try:
+                # The master list is stored in the 'nse_data' attribute
+                master_df = nse_instance.nse_data
+                # Find the row where 'Name' matches the input symbol (case-insensitive)
+                if symbol in symbol_mapping.keys():
+                    logger.info(f"Using mapped API symbol for '{symbol}': '{symbol_mapping[symbol]}'")
+                    match = master_df[master_df['Name'].str.lower() == symbol_mapping[symbol].lower()]
+                else:
+                    match = master_df[master_df['Name'].str.lower() == symbol.lower()]
+                if not match.empty:
+                    # Get the corresponding 'Symbol' from that row
+                    api_symbol = match['Symbol'].iloc[0]
+                    logger.info(f"Found matching API symbol for '{symbol}': '{api_symbol}'")
+                else:
+                    logger.warning(
+                        f"Could not find a matching symbol for '{symbol}' in openchart master. Using original name.")
+            except Exception as lookup_error:
+                logger.error(f"Error during symbol lookup for '{symbol}': {lookup_error}. Using original name.")
+            # --- End of New Logic ---
+
+            start_datetime = dt.datetime.combine(start_date, dt.datetime.min.time())
+            end_datetime = dt.datetime.combine(end_date, dt.datetime.max.time())
+
+            raw_data_oc = nse_instance.historical(
+                symbol=api_symbol,  # Use the looked-up symbol
+                exchange='NSE',
+                start=start_datetime,
+                end=end_datetime,
+                interval='1d'
+            )
+            if not raw_data_oc.empty:
+                logger.info("openchart fetch successful.")
+                return _format_openchart_data(raw_data_oc)
+            logger.warning("openchart returned no data. Trying fallback 1: nsepython.")
+        except Exception as e_oc:
+            logger.error(f"openchart failed: {e_oc}. Trying fallback 1: nsepython.")
 
     # 2. Fallback: nsepython
-    try:
-        logger.info(f"Attempting to fetch data for '{symbol}' using nsepython.")
-        raw_data_nse = index_history(symbol=symbol, start_date=start_date.strftime('%d-%m-%Y'),
-                                     end_date=end_date.strftime('%d-%m-%Y'))
-        if not raw_data_nse.empty:
-            logger.info("nsepython fetch successful.")
-            return _format_nsepython_data(raw_data_nse)
-        logger.warning("nsepython returned no data. Trying fallback 2: jugaad_data.")
-    except Exception as e_nse:
-        logger.error(f"nsepython failed: {e_nse}. Trying fallback 2: jugaad_data.")
+    if data_source in ['nsepython', 'openchart']:
+        try:
+            logger.info(f"Attempting to fetch data for '{symbol}' using nsepython.")
+            raw_data_nse = index_history(symbol=symbol, start_date=start_date.strftime('%d-%m-%Y'),
+                                        end_date=end_date.strftime('%d-%m-%Y'))
+            if not raw_data_nse.empty:
+                logger.info("nsepython fetch successful.")
+                return _format_nsepython_data(raw_data_nse)
+            logger.warning("nsepython returned no data.")
+        except Exception as e_nse:
+            logger.error(f"nsepython failed: {e_nse}")
 
-    # 3. Fallback: jugaad_data
-    try:
-        logger.info(f"Attempting to fetch data for '{symbol}' using jugaad_data.")
-        raw_data_jugaad = jn.index_raw(symbol=symbol, from_date=start_date, to_date=end_date)
-        if not raw_data_jugaad.empty:
-            logger.info("jugaad_data fetch successful.")
-            return _format_jugaad_data(raw_data_jugaad)
-        logger.warning("All data sources failed for the given period.")
-    except Exception as e_jugaad:
-        logger.error(f"jugaad_data also failed: {e_jugaad}")
-
+    logger.warning("All data sources failed for the given period.")
     return pd.DataFrame()
 
 
-def load_index_sector_history(symbol, start_date_obj, end_date_obj, database='nsedata'):
+def load_index_sector_history(symbol, start_date_obj, end_date_obj, database='nsedata', data_source='openchart'):
     """Performs a full historical data load for an NSE index or sector with multi-level fallback."""
     logger.info(f"Starting historical load for '{symbol}' from {start_date_obj} to {end_date_obj}.")
     table_name = symbol.replace(" ", "_").replace("-", "_")
 
-    formatted_data = _fetch_index_data_with_fallback(symbol, start_date_obj, end_date_obj)
+    formatted_data = _fetch_index_data_with_fallback(symbol, start_date_obj, end_date_obj, data_source)
 
     if formatted_data.empty:
         return "Failed to fetch data from all available sources."

@@ -62,6 +62,7 @@ class EODAnalysis:
         data = self.preprocess_data(data, stock)
         data = self.calculate_indicators(data)
         data = self.analyze_price_action(data)
+        data = self.analyze_additional_signals(data)
         data = self.analyze_narrow_range(data)
         return data
 
@@ -95,17 +96,18 @@ class EODAnalysis:
         if self.analysis_days >= 200:
             data['EMA_60'] = round(data['close'].ewm(span=60, min_periods=60).mean(), 2)
             data['EMA_200'] = round(data['close'].ewm(span=200).mean(), 2)
-        data['Reg_6'] = self.slope(data['close'], n=6)
-        data['Reg_6'] = round(data['Reg_6'], 2)
+        data['Reg_5'] = self.slope(data['close'], n=6)
+        data['Reg_5'] = round(data['Reg_5'], 2)
         data['Reg_18'] = round(ta.linreg(data['close'], length=18), 2)
-        data['Reg_6_Chg'] = round(data['Reg_6'] - data['Reg_6'].shift(), 1)
-        data['Reg_Cross'] = round(data['Reg_6'] - data['Reg_18'], 1)
+        data['Reg_5_Chg'] = round(data['Reg_5'] - data['Reg_5'].shift(), 1)
+        data['Reg_Cross'] = round(data['Reg_5'] - data['Reg_18'], 1)
+        data['RSI_14'] = round(ta.rsi(data['close'], length=14), 1)
         data['Vol_Abv_Avg20'] = round(data['volume'] / data['Vol_Avg20'], 2)
         data['Cls_Abv_EMA20'] = round(data['close'] - data['EMA_20'], 2)
         if self.analysis_days >= 200:
             data['Cls_Abv_EMA60'] = round(data['close'] - data['EMA_60'], 2)
             data['Cls_Abv_EMA200'] = round(data['close'] - data['EMA_200'], 2)
-        data['Cls_Abv_Reg6'] = round(data['close'] - data['Reg_6'], 2)
+        data['Cls_Abv_Reg5'] = round(data['close'] - data['Reg_5'], 2)
         return data
 
     def analyze_price_action(self, data):
@@ -158,7 +160,7 @@ class EODAnalysis:
 
     @staticmethod
     def analyze_regression(data, k, poc_bl, poc_br):
-        data.loc[k, 'Reg6_Sig'] = 'Close_GT_Reg6' if data.loc[k, 'Cls_Abv_Reg6'] >= 0 else 'Close_LT_Reg6'
+        data.loc[k, 'Reg5_Sig'] = 'Close_GT_Reg5' if data.loc[k, 'Cls_Abv_Reg5'] >= 0 else 'Close_LT_Reg5'
 
         reg_cross = data.loc[k, 'Reg_Cross']
         prev_reg_cross = data.loc[k - 1, 'Reg_Cross']
@@ -169,11 +171,259 @@ class EODAnalysis:
             data.loc[k, 'Reg_Cross_Sig'] = 'Cross_Down'
             poc_br += 1
         elif reg_cross >= 0 and prev_reg_cross >= 0:
-            data.loc[k, 'Reg_Cross_Sig'] = 'Reg6_Abv_Reg18'
+            data.loc[k, 'Reg_Cross_Sig'] = 'Reg5_Abv_Reg18'
         elif reg_cross < 0 and prev_reg_cross < 0:
-            data.loc[k, 'Reg_Cross_Sig'] = 'Reg6_Blw_Reg18'
+            data.loc[k, 'Reg_Cross_Sig'] = 'Reg5_Blw_Reg18'
 
         return poc_bl, poc_br
+
+    def analyze_additional_signals(self, data):
+        data = self.identify_rsi_divergence(data)
+        data = self.calculate_support_resistance_gap(data)
+        data = self.calculate_support_resistance_strength(data)
+        data = self.identify_stop_loss_hunt(data)
+        data = self.identify_level_reversal_and_breakout(data)
+        return data
+
+    @staticmethod
+    def identify_rsi_divergence(data, lookback=3):
+        data['RSI_Divergence'] = ''
+        if len(data) <= (2 * lookback):
+            return data
+
+        indices = data.index.tolist()
+        last_high_idx = None
+        last_low_idx = None
+
+        for pos in range(lookback, len(data) - lookback):
+            idx = indices[pos]
+            signals = []
+
+            current_high = data['high'].iloc[pos]
+            window_highs = data['high'].iloc[pos - lookback: pos + lookback + 1]
+            if current_high == window_highs.max():
+                if last_high_idx is not None:
+                    prev_idx = last_high_idx
+                    prev_high = data.loc[prev_idx, 'high']
+                    prev_rsi = data.loc[prev_idx, 'RSI_14']
+                    curr_rsi = data.loc[idx, 'RSI_14']
+                    if pd.notna(prev_rsi) and pd.notna(curr_rsi):
+                        if current_high > prev_high and curr_rsi < prev_rsi:
+                            signals.append('Bearish')
+                last_high_idx = idx
+
+            current_low = data['low'].iloc[pos]
+            window_lows = data['low'].iloc[pos - lookback: pos + lookback + 1]
+            if current_low == window_lows.min():
+                if last_low_idx is not None:
+                    prev_idx = last_low_idx
+                    prev_low = data.loc[prev_idx, 'low']
+                    prev_rsi = data.loc[prev_idx, 'RSI_14']
+                    curr_rsi = data.loc[idx, 'RSI_14']
+                    if pd.notna(prev_rsi) and pd.notna(curr_rsi):
+                        if current_low < prev_low and curr_rsi > prev_rsi:
+                            signals.append('Bullish')
+                last_low_idx = idx
+
+            if signals:
+                existing = data.at[idx, 'RSI_Divergence']
+                new_signal = ';'.join(signals) if len(signals) > 1 else signals[0]
+                data.at[idx, 'RSI_Divergence'] = f"{existing};{new_signal}" if existing else new_signal
+
+        return data
+
+    @staticmethod
+    def calculate_support_resistance_gap(data):
+        support_gap = (data['Curr_Supp'] - data['Prev_Supp']).round(2)
+        resistance_gap = (data['Curr_Res'] - data['Prev_Res']).round(2)
+
+        data['Support_Gap'] = support_gap
+        data['Resistance_Gap'] = resistance_gap
+
+        valid_support = (data['Curr_Supp'] != 0) & (data['Prev_Supp'] != 0)
+        valid_resistance = (data['Curr_Res'] != 0) & (data['Prev_Res'] != 0)
+
+        support_gap_pct = np.zeros(len(data))
+        resistance_gap_pct = np.zeros(len(data))
+
+        np.divide(
+            support_gap,
+            data['Prev_Supp'],
+            out=support_gap_pct,
+            where=valid_support
+        )
+        np.divide(
+            resistance_gap,
+            data['Prev_Res'],
+            out=resistance_gap_pct,
+            where=valid_resistance
+        )
+
+        data['Support_Gap_Pct'] = np.round(support_gap_pct * 100, 2)
+        data['Resistance_Gap_Pct'] = np.round(resistance_gap_pct * 100, 2)
+
+        return data
+
+    @staticmethod
+    def calculate_support_resistance_strength(data, tolerance_pct=1.0):
+        data['Support_Strength_Count'] = 0
+        data['Support_Strength_Label'] = ''
+        data['Resistance_Strength_Count'] = 0
+        data['Resistance_Strength_Label'] = ''
+
+        support_history = []
+        resistance_history = []
+
+        indices = data.index.tolist()
+
+        for pos, idx in enumerate(indices):
+            curr_support = data.loc[idx, 'Curr_Supp']
+            if pd.notna(curr_support) and curr_support != 0:
+                valid_history = [val for val in support_history if val != 0]
+                matches = [
+                    val for val in valid_history
+                    if abs(curr_support - val) / abs(val) <= tolerance_pct / 100
+                ]
+                count = len(matches) + 1
+                data.at[idx, 'Support_Strength_Count'] = count
+                if count > 1:
+                    data.at[idx, 'Support_Strength_Label'] = f"Strong_Support_x{count}"
+                else:
+                    data.at[idx, 'Support_Strength_Label'] = 'New_Support'
+                support_history.append(curr_support)
+
+            curr_resistance = data.loc[idx, 'Curr_Res']
+            if pd.notna(curr_resistance) and curr_resistance != 0:
+                valid_history = [val for val in resistance_history if val != 0]
+                matches = [
+                    val for val in valid_history
+                    if abs(curr_resistance - val) / abs(val) <= tolerance_pct / 100
+                ]
+                count = len(matches) + 1
+                data.at[idx, 'Resistance_Strength_Count'] = count
+                if count > 1:
+                    data.at[idx, 'Resistance_Strength_Label'] = f"Strong_Resistance_x{count}"
+                else:
+                    data.at[idx, 'Resistance_Strength_Label'] = 'New_Resistance'
+                resistance_history.append(curr_resistance)
+
+        data['Support_Strength_Count'] = data['Support_Strength_Count'].astype(int)
+        data['Resistance_Strength_Count'] = data['Resistance_Strength_Count'].astype(int)
+        return data
+
+    @staticmethod
+    def identify_stop_loss_hunt(data):
+        data['Stop_Loss_Hunt'] = ''
+        if not {'Range_ATR', 'open', 'low', 'high', 'Pct_Chg'}.issubset(data.columns):
+            return data
+
+        range_expansion = data['Range_ATR'] > 1.2
+        open_low_equal = np.isclose(data['open'], data['low'], atol=0.01)
+        high_less_prev_high = data['high'] < data['high'].shift(1)
+        pct_change = data['Pct_Chg'].abs()
+        pct_condition = (pct_change > 0) & (pct_change < 1)
+
+        mask = range_expansion & open_low_equal & high_less_prev_high & pct_condition
+        data.loc[mask, 'Stop_Loss_Hunt'] = 'Bullish_Stop_Loss_Hunt'
+        return data
+
+    def identify_level_reversal_and_breakout(self, data):
+        data['Reversal_Signals'] = ''
+        data['Failed_Breakout_Signals'] = ''
+
+        if len(data) < 4 or 'Reg_5_Chg' not in data.columns:
+            return data
+
+        level_names = ['EMA_20', 'EMA_60', 'EMA_200', 'Curr_Supp', 'Prev_Supp', 'Curr_Res', 'Prev_Res']
+        level_series_map = {
+            level: data[level].replace(0, np.nan).ffill()
+            for level in level_names
+            if level in data.columns
+        }
+
+        bullish_levels = ['EMA_20', 'EMA_60', 'EMA_200', 'Curr_Supp', 'Prev_Supp']
+        bearish_levels = ['EMA_20', 'EMA_60', 'EMA_200', 'Curr_Res', 'Prev_Res']
+
+        indices = data.index.tolist()
+
+        for pos in range(3, len(data)):
+            idx = indices[pos]
+            rev_signals = []
+            failed_signals = []
+
+            prev_vals = [data.loc[indices[pos - j], 'Reg_5_Chg'] for j in range(1, 4)]
+            if any(pd.isna(val) for val in prev_vals) or pd.isna(data.loc[idx, 'Reg_5_Chg']):
+                continue
+
+            reg_prev_neg = all(val < 0 for val in prev_vals)
+            reg_prev_pos = all(val > 0 for val in prev_vals)
+            reg_curr_pos = data.loc[idx, 'Reg_5_Chg'] > 0
+            reg_curr_neg = data.loc[idx, 'Reg_5_Chg'] < 0
+
+            if reg_prev_neg and reg_curr_pos:
+                for level_name in bullish_levels:
+                    if level_name not in level_series_map:
+                        continue
+                    level_series = level_series_map[level_name]
+                    level_current = level_series.iloc[pos]
+                    if pd.isna(level_current):
+                        continue
+
+                    touched = False
+                    crossed_below = False
+                    for j in range(1, 4):
+                        prev_pos = pos - j
+                        prev_idx = indices[prev_pos]
+                        level_prev = level_series.iloc[prev_pos]
+                        if pd.isna(level_prev):
+                            continue
+                        low_prev = data.loc[prev_idx, 'low']
+                        close_prev = data.loc[prev_idx, 'close']
+                        if low_prev <= level_prev <= close_prev:
+                            touched = True
+                        if close_prev < level_prev:
+                            crossed_below = True
+
+                    if touched and not crossed_below and data.loc[idx, 'close'] >= level_current:
+                        rev_signals.append(f"Bullish_{level_name}")
+                    if crossed_below and data.loc[idx, 'close'] >= level_current:
+                        failed_signals.append(f"Bullish_FailedBreakout_{level_name}")
+
+            if reg_prev_pos and reg_curr_neg:
+                for level_name in bearish_levels:
+                    if level_name not in level_series_map:
+                        continue
+                    level_series = level_series_map[level_name]
+                    level_current = level_series.iloc[pos]
+                    if pd.isna(level_current):
+                        continue
+
+                    touched = False
+                    crossed_above = False
+                    for j in range(1, 4):
+                        prev_pos = pos - j
+                        prev_idx = indices[prev_pos]
+                        level_prev = level_series.iloc[prev_pos]
+                        if pd.isna(level_prev):
+                            continue
+                        high_prev = data.loc[prev_idx, 'high']
+                        close_prev = data.loc[prev_idx, 'close']
+                        if high_prev >= level_prev >= close_prev:
+                            touched = True
+                        if close_prev > level_prev:
+                            crossed_above = True
+
+                    if touched and not crossed_above and data.loc[idx, 'close'] <= level_current:
+                        rev_signals.append(f"Bearish_{level_name}")
+                    if crossed_above and data.loc[idx, 'close'] <= level_current:
+                        failed_signals.append(f"Bearish_FailedBreakout_{level_name}")
+
+            if rev_signals:
+                data.at[idx, 'Reversal_Signals'] = ';'.join(rev_signals)
+            if failed_signals:
+                data.at[idx, 'Failed_Breakout_Signals'] = ';'.join(failed_signals)
+
+        return data
 
     @staticmethod
     def analyze_volume(data, k):
@@ -199,11 +449,11 @@ class EODAnalysis:
 
     @staticmethod
     def analyze_support(data, k, curr_support, prev_support, curr_res, prev_res, poc_bl):
-        supp_cond = (data.loc[k, 'Reg_6'] > data.loc[k - 1, 'Reg_6']) and (
-                data.loc[k - 1, 'Reg_6'] < data.loc[k - 2, 'Reg_6'] < data.loc[k - 3, 'Reg_6'] < data.loc[k - 4, 'Reg_6'])
+        supp_cond = (data.loc[k, 'Reg_5'] > data.loc[k - 1, 'Reg_5']) and (
+                data.loc[k - 1, 'Reg_5'] < data.loc[k - 2, 'Reg_5'] < data.loc[k - 3, 'Reg_5'] < data.loc[k - 4, 'Reg_5'])
         if supp_cond:
             prev_support = curr_support
-            curr_support = data.loc[k - 1, 'Reg_6']
+            curr_support = data.loc[k - 1, 'Reg_5']
             data.loc[k, 'Prev_Supp'] = round(prev_support, 2)
             data.loc[k, 'Curr_Supp'] = round(curr_support, 2)
 
@@ -234,11 +484,11 @@ class EODAnalysis:
 
     @staticmethod
     def analyze_resistance(data, k, curr_res, prev_res, curr_support, prev_support, poc_br):
-        res_cond = (data.loc[k, 'Reg_6'] < data.loc[k - 1, 'Reg_6']) and (
-                data.loc[k - 1, 'Reg_6'] > data.loc[k - 2, 'Reg_6'] > data.loc[k - 3, 'Reg_6'] > data.loc[k - 4, 'Reg_6'])
+        res_cond = (data.loc[k, 'Reg_5'] < data.loc[k - 1, 'Reg_5']) and (
+                data.loc[k - 1, 'Reg_5'] > data.loc[k - 2, 'Reg_5'] > data.loc[k - 3, 'Reg_5'] > data.loc[k - 4, 'Reg_5'])
         if res_cond:
             prev_res = curr_res
-            curr_res = data.loc[k - 1, 'Reg_6']
+            curr_res = data.loc[k - 1, 'Reg_5']
             data.loc[k, 'Prev_Res'] = round(prev_res, 2)
             data.loc[k, 'Curr_Res'] = round(curr_res, 2)
 
@@ -281,11 +531,11 @@ class EODAnalysis:
             days_since_low = k - low_date
 
             if (data.loc[k, 'close'] > high_20 and days_since_high >= 10 and
-                    data.loc[k, 'Reg_6'] > data.loc[k, 'Reg_18']):
+                    data.loc[k, 'Reg_5'] > data.loc[k, 'Reg_18']):
                 data.loc[k, 'Breakout_20'] = 'Breakout_20_Up'
                 poc_bl += 1
             elif (data.loc[k, 'close'] < low_20 and days_since_low >= 10 and
-                  data.loc[k, 'Reg_6'] < data.loc[k, 'Reg_18']):
+                  data.loc[k, 'Reg_5'] < data.loc[k, 'Reg_18']):
                 data.loc[k, 'Breakout_20'] = 'Breakout_20_Down'
                 poc_br += 1
 

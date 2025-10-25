@@ -1,8 +1,12 @@
-import pandas as pd
+﻿import pandas as pd
 from upstox_client.rest import ApiException
 from datetime import datetime, timedelta
+import upstox_client
 import logging
-from .logging_utils import configure_logging
+try:
+    from .logging_utils import configure_logging
+except ImportError:
+    from logging_utils import configure_logging
 import requests
 import os
 import configparser
@@ -22,7 +26,7 @@ def _pg_engine_from_config(db_name: Optional[str] = None):
 
     Avoids importing read_write_sql_data to prevent circular imports.
     """
-    cfg = configparser.ConfigParser()
+    cfg = configparser.RawConfigParser()
     cfg.read('config.ini')
     if 'postgres' not in cfg:
         raise RuntimeError("Missing [postgres] section in config.ini")
@@ -48,32 +52,12 @@ def _pg_engine_from_config(db_name: Optional[str] = None):
     host = pg.get('host', 'localhost')
     port = pg.get('port', '5432')
     url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+    print(url)
     return create_engine(url, pool_size=1, max_overflow=2, pool_timeout=30, pool_recycle=1800)
 
 
-def _detect_column(conn, schema: str, table: str, candidates: list[str]) -> Optional[str]:
-    q = text(
-        """
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = :schema AND table_name = :table
-          AND column_name = ANY(:candidates)
-        LIMIT 1
-        """
-    )
-    row = conn.execute(q, {"schema": schema, "table": table, "candidates": candidates}).fetchone()
-    return row[0] if row else None
-
-
 def get_upstox_access_token() -> Optional[str]:
-    """Return Upstox access token from env or PostgreSQL trading_db.users.
-
-    Order of precedence:
-      1) Env var UPSTOX_ACCESS_TOKEN if present and non-empty
-      2) Database lookup in trading_db.public.users, preferring columns
-         ['upstox_access_token', 'access_token', 'token'] and ordering by
-         most recent timestamp column among ['updated_at','last_updated','modified_at'] if available.
-    """
+    """Return Upstox access token from env or PostgreSQL trading_db.users."""
     env_token = os.getenv('UPSTOX_ACCESS_TOKEN')
     if env_token:
         return env_token
@@ -83,12 +67,8 @@ def get_upstox_access_token() -> Optional[str]:
         with engine.connect() as conn:
             schema = 'public'
             table = 'users'
-            token_col = _detect_column(conn, schema, table, ['upstox_access_token', 'access_token', 'token'])
-            if not token_col:
-                logger.error("Could not find a token column in trading_db.public.users")
-                return None
-
-            ts_col = _detect_column(conn, schema, table, ['updated_at', 'last_updated', 'modified_at'])
+            token_col = 'upstox_access_token'
+            ts_col = 'upstox_access_token_expiry'
             if ts_col:
                 q = text(f"SELECT \"{token_col}\" FROM {schema}.\"{table}\" WHERE \"{token_col}\" IS NOT NULL ORDER BY \"{ts_col}\" DESC LIMIT 1")
             else:
@@ -96,6 +76,7 @@ def get_upstox_access_token() -> Optional[str]:
 
             row = conn.execute(q).fetchone()
             if row and row[0]:
+                print(row[0])
                 return row[0]
             logger.error("No non-null Upstox token found in DB")
             return None
@@ -254,38 +235,38 @@ def get_symbol_for_instrument(instrument_token):
         return None
 
 
-def get_market_quote(api, instrument_tokens, mode="full"):
+def get_market_quote(instrument_tokens, mode="full"):
     try:
-        if mode == "full":
-            api_response = api.get_full_market_quote(instrument_tokens, api_version="v2").data
-        elif mode == 'ohlc':
-            api_response = api.get_market_quote_ohlc(instrument_tokens, interval='1d', api_version="v2").data
-        else:
-            api_response = api.ltp(instrument_tokens, api_version="v2").data
-        latest_data = {}
-        for key, data in api_response.items():
-            latest_data = data
+        configuration = upstox_client.Configuration()
+        token = get_upstox_access_token()
+        print(token)
+        configuration.access_token = token
 
+        api_instance = upstox_client.MarketQuoteApi(upstox_client.ApiClient(configuration))
+        api_response = api_instance.get_full_market_quote(instrument_tokens, api_version="v2").data
+
+        latest_data = {}
+        for key, row_data in api_response.items():
+            latest_data[row_data.symbol] = row_data
+
+        return_data = {}
         if mode == 'full':
-            return_data = {"symbol": latest_data.instrument_token,
-                           "ltp": latest_data.last_price,
-                           "open": latest_data.ohlc.open,
-                           "high": latest_data.ohlc.high,
-                           "low": latest_data.ohlc.low,
-                           "close": latest_data.ohlc.close}
+            for key, data in latest_data.items():
+                return_data[key] = data.to_dict()
         elif mode == 'ohlc':
-            return_data = {
-                "symbol": latest_data.symbol,
-                "ltp": latest_data.last_price,
-                "open": latest_data.ohlc.open,
-                "high": latest_data.ohlc.high,
-                "low": latest_data.ohlc.low,
-                "close": latest_data.ohlc.close,
-                "volume": latest_data.volume}
+            for key, data in latest_data.items():
+                return_data[key] = {
+                    "timestamp": datetime.fromtimestamp(int(data.last_trade_time)/1000),
+                    "open": data.ohlc.open,
+                    "high": data.ohlc.high,
+                    "low": data.ohlc.low,
+                    "close": data.ohlc.close,
+                    "volume": data.volume}
         else:
-            return_data = {
-                "symbol": latest_data.instrument_token,
-                "ltp": latest_data.last_price}
+            for key, data in latest_data.items():
+                return_data[key] = {
+                    "timestamp": datetime.fromtimestamp(int(data.last_trade_time)/1000),
+                    "ltp": data.last_price}
         return return_data
     except ApiException as e:
         logger.error(f"Exception when calling MarketQuoteApi->get_quotes: {e}")
@@ -309,8 +290,20 @@ def calculate_brokerage(api, instrument_token, quantity, price, transaction_type
 
 if __name__ == '__main__':
     # Example usage
-    # print(get_historical_data(instrument_token='NSE_EQ|INE051B01021'))
-    print(get_intraday_candle_data(instrument_key='NSE_EQ|INE051B01021', unit='minutes', interval='15'))
+    print(get_historical_data(instrument_token='NSE_COM|1'))
+    # import upstox_client
+    # from upstox_client.rest import ApiException
+
+    # configuration = upstox_client.Configuration()
+    # configuration.access_token = get_upstox_access_token()
+
+    # symbol = 'NSE_EQ|INE669E01016,NSE_EQ|INE051B01021'
+    # api_instance = upstox_client.MarketQuoteApi(upstox_client.ApiClient(configuration))
+    # data = get_market_quote(instrument_tokens=symbol, mode='ohlc')
+    # print(data)
+    # df = pd.DataFrame(data.values())
+    # print(df)
+    # print(get_intraday_candle_data(instrument_key='NSE_EQ|INE051B01021', unit='minutes', interval='15'))
     # print(get_intraday_daily_bar(instrument_key='NSE_EQ|INE051B01021'))
     # print(fetch_instruments())
 

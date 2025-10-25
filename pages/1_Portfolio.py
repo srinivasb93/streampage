@@ -4,8 +4,12 @@ from common_utils import read_write_sql_data as rd
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
+from common_utils.auth import require_authentication
 
 st.set_page_config(layout="wide")
+
+# Require authentication for this page
+require_authentication()
 
 @st.cache_data
 def fetch_portfolio_data(req_portfolio='Equity'):
@@ -124,7 +128,7 @@ def portfolio():
                           legend=dict(x=.8, y=.95, bgcolor='rgba(255, 255, 255, 0)',
                                       bordercolor='rgba(255, 255, 255, 0)'),
                           barmode='group', bargap=0.15, bargroupgap=0.1)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with pnl_col:
         chart_title = "Profit/Loss Summary" if selected_pf != "Total" else "Equity vs MF Weightage Summary"
@@ -134,7 +138,7 @@ def portfolio():
         st.plotly_chart(px.pie(
             df_copy, names=chart_names, values=chart_values, title=chart_title,
             color_discrete_sequence=px.colors.sequential.Bluered
-        ), use_container_width=True)
+        ), width='stretch')
 
     # --- Data Table ---
     st.dataframe(df.style
@@ -142,7 +146,7 @@ def portfolio():
                  .background_gradient(cmap='RdYlGn', subset=["PnL", "PnL_%", "Daily_Pct_Change"])
                  .highlight_max(subset=["Current_Value", "Daily_Change"], color='#3ee27a')
                  .highlight_min(subset=["PnL", "Daily_Change"], color="#ea3c34"),
-                 hide_index=True, use_container_width=True)
+                 hide_index=True, width='stretch')
 
 
 # ADDED: This makes the script executable as a Streamlit page.

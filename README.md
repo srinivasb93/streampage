@@ -42,7 +42,7 @@ docker run \
 
 Open http://localhost:8501
 
-On Linux, add a host-gateway mapping so `host.docker.internal` resolves:
+On Linux (native or WSL2), add a host-gateway mapping so `host.docker.internal` resolves **and** mount your `.env` alongside `config.ini` so `python-dotenv` can load it:
 
 ```bash
 docker run \
@@ -51,8 +51,11 @@ docker run \
   -e UPSTOX_ACCESS_TOKEN=$UPSTOX_ACCESS_TOKEN \
   -e POSTGRES_HOST=host.docker.internal \
   -v $(pwd)/config.ini:/app/config.ini:ro \
+  -v $(pwd)/.env:/app/.env:ro \
   streampage
 ```
+
+> Tip: if you prefer passing all secrets via environment variables, swap the `.env` bind mount for an `--env-file .env` flag.
 
 Notes:
 - The app already reads `config.ini` for `[postgres]` settings, but any of these env vars will override it: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`.

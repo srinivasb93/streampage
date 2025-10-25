@@ -10,18 +10,22 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 import os
-import threading
 import upstox_client
 import statsmodels.api as sm
 from common_utils import upstox_utils
 from common_utils.utils import fetch_indicies_sectors_list
 import datetime as dt
+from common_utils.auth import require_authentication
+from python_scripts.analysis.EOD_analysis import EODAnalysis
 
 # Load environment variables (for Upstox integration)
 load_dotenv()
 UPSTOX_ACCESS_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN")
 
 st.set_page_config(layout="wide")
+
+# Require authentication for this page
+require_authentication()
 
 # Upstox API Initialization
 def init_upstox_api():
@@ -65,20 +69,26 @@ if "live_data" not in st.session_state:
 if "additional_chart_timeframes" not in st.session_state:
     st.session_state.additional_chart_timeframes = []
 
+if "eod_analysis_results" not in st.session_state:
+    st.session_state.eod_analysis_results = {}
+
+if "eod_analysis_status" not in st.session_state:
+    st.session_state.eod_analysis_status = {}
+
 
 SQL_TIMEFRAME_OPTIONS = [
     ("Daily", "Daily"),
     ("Weekly", "Weekly"),
     ("Monthly", "Monthly"),
-    ("Quarterly", "Quarterly"),
     ("Yearly", "Yearly"),
 ]
 
 UPSTOX_TIMEFRAME_OPTIONS = [
-    ("1 Minute", "1minute"),
-    ("Daily", "day"),
-    ("Weekly", "week"),
-    ("Monthly", "month"),
+    ("Minutes", "minutes"),
+    ("Hours", "hours"),
+    ("Daily", "days"),
+    ("Weekly", "weeks"),
+    ("Monthly", "months"),
 ]
 
 
@@ -96,34 +106,158 @@ def get_timeframe_value(label, options):
 def sanitize_sql_symbol(symbol):
     return symbol.replace('-', '_').replace(' ', '_')
 
+EMPTY_OHLC_COLUMNS = ['open', 'high', 'low', 'close', 'volume', 'Price_Chg']
+
+
+def build_eod_signal_summary(latest_row: pd.Series) -> list[str]:
+    """Create a list of human-friendly highlights from the latest EOD analysis row."""
+    summary_lines: list[str] = []
+
+    def cleaned(field_name):
+        value = latest_row.get(field_name)
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, '', 'nan'):
+            return None
+        if isinstance(value, float) and pd.isna(value):
+            return None
+        return value
+
+    stop_loss_hunt = cleaned('Stop_Loss_Hunt')
+    if stop_loss_hunt:
+        summary_lines.append(f"Stop-loss hunt pattern detected ({stop_loss_hunt}).")
+
+    divergence = cleaned('RSI_Divergence')
+    if divergence:
+        summary_lines.append(f"RSI divergence signal: {divergence}.")
+
+    reversal = cleaned('Reversal_Signals')
+    if reversal:
+        summary_lines.append(f"Reversal cues at key levels: {reversal}.")
+
+    failed_breakout = cleaned('Failed_Breakout_Signals')
+    if failed_breakout:
+        summary_lines.append(f"Failed breakout flags: {failed_breakout}.")
+
+    breakout_20 = cleaned('Breakout_20')
+    if breakout_20:
+        summary_lines.append(f"20-day breakout status: {breakout_20}.")
+
+    sup_strength = cleaned('Support_Strength_Label')
+    if sup_strength:
+        count = cleaned('Support_Strength_Count')
+        count_text = f" (touches: {int(count)})" if isinstance(count, (int, float)) and not pd.isna(count) else ""
+        summary_lines.append(f"Support strength: {sup_strength}{count_text}.")
+
+    res_strength = cleaned('Resistance_Strength_Label')
+    if res_strength:
+        count = cleaned('Resistance_Strength_Count')
+        count_text = f" (touches: {int(count)})" if isinstance(count, (int, float)) and not pd.isna(count) else ""
+        summary_lines.append(f"Resistance strength: {res_strength}{count_text}.")
+
+    support_gap_pct = cleaned('Support_Gap_Pct')
+    if isinstance(support_gap_pct, (int, float)) and abs(support_gap_pct) >= 0.01:
+        summary_lines.append(f"Current support is {support_gap_pct:.2f}% away from the previous support.")
+
+    resistance_gap_pct = cleaned('Resistance_Gap_Pct')
+    if isinstance(resistance_gap_pct, (int, float)) and abs(resistance_gap_pct) >= 0.01:
+        summary_lines.append(f"Current resistance is {resistance_gap_pct:.2f}% away from the previous resistance.")
+
+    break_sup_res = cleaned('Break_Sup_Res')
+    if break_sup_res:
+        summary_lines.append(f"Support/resistance break status: {break_sup_res}.")
+
+    return summary_lines
+
+
+def load_openchart_stock_data(symbol, unit, interval='1'):
+    interval_data = upstox_utils.get_openchart_history(symbol, unit=unit, interval=interval)
+    if not isinstance(interval_data, pd.DataFrame) or interval_data.empty:
+        return pd.DataFrame()
+    interval_data = interval_data.copy()
+    interval_data['timestamp'] = pd.to_datetime(interval_data['timestamp'])
+    interval_data.sort_values('timestamp', inplace=True)
+    return interval_data[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+
 
 # Data Extraction
-@st.cache_data
-def extract_stock_data(stock_name, data_source='SQL', period_sql='Daily', period_upstox='days'):
+def extract_stock_data(stock_name, data_source='SQL', period='days', interval='1', asset_type='stock'):
     df = pd.DataFrame()
+
     if data_source == 'SQL':
-        periods = {"Weekly": "_W", "Monthly": "_M", "Quarterly": "_Q", "Yearly": "_Y"}
-        stock_name += periods.get(period_sql, "")
-        query = f'select * from public."{stock_name}" order by timestamp ASC'
-        df = rd.get_table_data(query=query)
-        if period_sql == 'Daily':
-            # Ensure tz-naive datetime; data is stored tz-naive in DB
-            df["timestamp"] = pd.to_datetime(df["timestamp"]) 
-        df.set_index("timestamp", inplace=True)
+        if (period in ["Daily", "Weekly", "Monthly", "Yearly"] and asset_type == 'stock') or (period == 'Daily' and asset_type == 'index'):
+            periods = {"Weekly": "_W", "Monthly": "_M", "Quarterly": "_Q", "Yearly": "_Y"}
+            table_suffix = periods.get(period, "")
+            table_name = f"{sanitize_sql_symbol(stock_name)}{table_suffix}"
+            query = f'select * from public."{table_name}" order by timestamp ASC'
+            try:
+                df = rd.get_table_data(query=query)
+            except Exception:
+                df = pd.DataFrame()
+        else:
+            period_map = {"minutes": "Minutes", "hours": "Hours", "days": "Daily", "weeks": "Weekly", "months": "Monthly"}
+            period = period_map.get(period, "Daily")
+            df = load_openchart_stock_data(stock_name, period, interval)
+
+        if isinstance(df, pd.DataFrame) and not df.empty and 'timestamp' in df.columns:
+            df = df.copy()
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+        else:
+            df = load_openchart_stock_data(stock_name, period, interval)
+
     elif data_source == 'Upstox':
-        instruments_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
-        instrument_token = instruments_df[instruments_df['trading_symbol'] == stock_name]['instrument_token'].iloc[0]
+        try:
+            instruments_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
+        except Exception:
+            instruments_df = pd.DataFrame()
 
+        instrument_token = None
+        if isinstance(instruments_df, pd.DataFrame) and not instruments_df.empty:
+            match = instruments_df[instruments_df['trading_symbol'] == stock_name]
+            if not match.empty:
+                instrument_token = match['instrument_token'].iloc[0]
+
+        if period.endswith('minutes'):
+            from_date = (pd.Timestamp.now() - dt.timedelta(days=10)).strftime('%Y-%m-%d')
+        elif period.endswith('hours'):
+            from_date = (pd.Timestamp.now() - dt.timedelta(days=30)).strftime('%Y-%m-%d')
+        else:
+            from_date = (pd.Timestamp.now() - dt.timedelta(days=3650)).strftime('%Y-%m-%d')
         to_date = pd.Timestamp.now().strftime('%Y-%m-%d')
-        response = upstox_utils.get_historical_data(instrument_token, period_upstox, end_date=to_date)
-        df = pd.DataFrame(response.data.candles, columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
-        # df["Date"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
-        # df.sort_values(by='Date', inplace=True)
-        # df.set_index('Date', inplace=True)
-        # df = df[['open', 'high', 'low', 'close', 'volume']]
-        # df.columns = ['open', 'high', 'low', 'close', 'volume']
 
-    df["Price_Chg"] = round(df["close"].pct_change() * 100, 1)
+        if instrument_token:
+            df = upstox_utils.get_historical_data(
+                instrument_token,
+                interval=period,
+                unit=interval,
+                start_date=from_date,
+                end_date=to_date
+            )
+        if isinstance(df, pd.DataFrame) and not df.empty and 'timestamp' in df.columns:
+            df = df.copy()
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+        else:
+            df = load_openchart_stock_data(stock_name, period, interval)
+
+    else:
+        df = load_openchart_stock_data(stock_name, period, interval)
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame(columns=EMPTY_OHLC_COLUMNS)
+
+    if 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+
+    df.sort_index(inplace=True)
+    if 'volume' not in df.columns:
+        df['volume'] = 0
+    if 'close' in df.columns:
+        df['Price_Chg'] = (df['close'].pct_change() * 100).round(1)
+    else:
+        df['Price_Chg'] = pd.NA
     return df
 
 
@@ -253,11 +387,11 @@ def calculate_support_resistance(stock_name, data, window=12, data_src='SQL'):
     support_data = {}
     resistance_data = {}
     if data_src == 'SQL':
-        monthly_data = extract_stock_data(stock_name, data_source=data_src, period_sql="Monthly")
-        weekly_data = extract_stock_data(stock_name, data_source=data_src, period_sql="Weekly")
+        monthly_data = extract_stock_data(stock_name, data_source=data_src, period="Monthly", interval='1')
+        weekly_data = extract_stock_data(stock_name, data_source=data_src, period="Weekly", interval='1')
     else:
-        monthly_data = extract_stock_data(stock_name, data_source=data_src, period_yf="10y", interval_yf="1mo")
-        weekly_data = extract_stock_data(stock_name, data_source=data_src, period_yf="1y", interval_yf="1wk")
+        monthly_data = extract_stock_data(stock_name, data_source=data_src, period='months', interval='1')
+        weekly_data = extract_stock_data(stock_name, data_source=data_src, period='weeks', interval='1')
 
     daily_data = data.tail(200).copy()
     weekly_data = weekly_data.tail(104)
@@ -390,11 +524,14 @@ def stock_analysis():
         primary_label = st.selectbox("Primary Timeframe", timeframe_labels, index=timeframe_labels.index(default_primary_label))
         primary_value = get_timeframe_value(primary_label, timeframe_options)
 
-        data_identifier = sanitize_sql_symbol(stock_name) if data_src == 'SQL' else stock_name
         if data_src == 'SQL':
-            df = extract_stock_data(data_identifier, data_source='SQL', period_sql=primary_value)
+            df = extract_stock_data(stock_name, data_source='SQL', period=primary_value, interval='1')
         else:
-            df = extract_stock_data(data_identifier, data_source='Upstox', period_upstox=primary_value)
+            df = extract_stock_data(stock_name, data_source='Upstox', period=primary_value, interval='1')
+
+        if df.empty:
+            st.warning("No data available for the selected source/timeframe.")
+            st.stop()
 
         max_additional = max(0, len(timeframe_labels) - 1)
         previous_count = min(len(st.session_state.additional_chart_timeframes), max_additional)
@@ -408,7 +545,7 @@ def stock_analysis():
             idx += 1
         st.session_state.additional_chart_timeframes = current_configs
 
-        data_replay = st.checkbox("Replay Data", value=True)
+        data_replay = st.checkbox("Replay Data", value=False)
 
         if data_replay:
             replay_date = st.date_input("Replay Date", value=df.index[-1].date(), min_value=df.index[0].date(),
@@ -421,7 +558,7 @@ def stock_analysis():
                                               options=["EMA", "SMA", "WMA", "BBANDS", "MACD", "RSI", "LINREG"])
             params = {}
             if selected_indicator in ['EMA', 'SMA', 'WMA', 'RSI', 'LINREG']:
-                params['period'] = st.number_input(f"{selected_indicator} Period", value=14, min_value=2, max_value=100)
+                params['period'] = st.number_input(f"{selected_indicator} Period", value=14, min_value=2, max_value=200)
             elif selected_indicator == 'BBANDS':
                 params['period'] = st.number_input("BB Period", value=20, min_value=2, max_value=100)
                 params['std'] = st.number_input("Std Dev", value=2.0, min_value=0.1, max_value=5.0, step=0.1)
@@ -442,6 +579,7 @@ def stock_analysis():
         show_summary = st.checkbox("Show Summary")
         show_heatmap = st.checkbox("Show Heatmap")
         show_analysis = st.checkbox("Show Analysis Tools")
+        show_eod = st.checkbox("Show EOD Analysis")
         show_data = st.checkbox("Show Raw Data")
 
     # Chart Section (Always Visible)
@@ -460,8 +598,8 @@ def stock_analysis():
     def fetch_dataframe_for_label(label):
         value = timeframe_lookup[label]
         if data_src == 'SQL':
-            return extract_stock_data(data_identifier, data_source='SQL', period_sql=value).copy()
-        return extract_stock_data(data_identifier, data_source='Upstox', period_upstox=value).copy()
+            return extract_stock_data(stock_name, data_source='SQL', period=value, interval='1').copy()
+        return extract_stock_data(stock_name, data_source='Upstox', period=value, interval='1').copy()
 
     def update_chart_data():
         replay_data = df.iloc[:st.session_state.current_replay_index + 1].copy()
@@ -546,16 +684,22 @@ def stock_analysis():
         st.metric("Live LTP (Upstox)", f"₹{st.session_state.live_data['ltp']:.2f}")
 
     # Tabs for Other Sections (Conditional)
-    if show_summary or show_heatmap or show_analysis or show_data:
+    if show_summary or show_heatmap or show_analysis or show_eod or show_data:
         tabs = st.tabs([tab for tab, show in
                         [("Summary", show_summary), ("Heatmap", show_heatmap), ("Analysis Tools", show_analysis),
-                         ("Raw Data", show_data)] if show])
+                         ("EOD Analysis", show_eod), ("Raw Data", show_data)] if show])
 
         tab_index = 0
         if show_summary:
             with tabs[tab_index]:
                 st.header("Stock Summary")
                 summary_data = calculate_stock_summary(df.iloc[:st.session_state.current_replay_index + 1])
+                
+                # Add validation for empty dataframe
+                if summary_data.empty or len(summary_data) == 0:
+                    st.warning("Insufficient data for summary. Please select a different timeframe or stock.")
+                    return  # Exit early from this tab section
+                
                 latest_data = summary_data.iloc[-1]
                 prev_data = summary_data.iloc[-2] if len(summary_data) > 1 else latest_data
 
@@ -657,7 +801,7 @@ def stock_analysis():
                 st.header("Monthly Returns Heatmap")
                 if st.button("Generate Heatmap"):
                     monthly_df = extract_stock_data(stock_name, data_source=data_src,
-                                                    period_sql="Monthly")
+                                                    period="Monthly", interval='1')
                     monthly_returns = calculate_monthly_returns(monthly_df)
                     plt.figure(figsize=(10, 5))
                     sns.heatmap(monthly_returns, annot=True, fmt=".1%", cmap='RdYlGn', center=0)
@@ -671,6 +815,12 @@ def stock_analysis():
                 with analysis_cols[0]:
                     st.subheader("Trade Setup Summary")
                     summary_data = calculate_stock_summary(df.iloc[:st.session_state.current_replay_index + 1])
+                    
+                    # Add validation for empty dataframe
+                    if summary_data.empty or len(summary_data) == 0:
+                        st.warning("Insufficient data for analysis tools. Please select a different timeframe or stock.")
+                        return  # Exit early from this tab section
+                    
                     latest_data = summary_data.iloc[-1]
                     support_data, resistance_data = calculate_support_resistance(stock_name, summary_data)
                     nearest_support = min(
@@ -717,7 +867,7 @@ def stock_analysis():
                         "Benchmark": bench_data
                     }).pct_change().cumsum().dropna()
                     if not combined.empty:
-                        st.line_chart(combined, use_container_width=True)
+                        st.line_chart(combined, width='stretch')
                     else:
                         st.error("No overlapping data available for comparison after processing.")
                 else:
@@ -739,7 +889,7 @@ def stock_analysis():
                             if abs(latest_close - level) / level < 0.01 and latest_close < level:
                                 st.markdown(f"- **Bearish Breakout** below {timeframe} Resistance: {level:.2f}")
                     else:
-                        st.markdown(f"No Breakouts detected")
+                        st.markdown("No Breakouts detected")
                     if 'BBU_20_2.0' in recent_data and latest_close > recent_data['BBU_20_2.0'].iloc[-1]:
                         st.markdown(
                             f"- **Bullish BB Breakout**: Above Upper Band ({recent_data['BBU_20_2.0'].iloc[-1]:.2f})")
@@ -802,6 +952,77 @@ def stock_analysis():
                             st.markdown(f"- **Bearish Engulfing** on {latest.name.date()}: Potential bearish reversal")
 
                 tab_index += 1
+
+        if show_eod:
+            with tabs[tab_index]:
+                st.header("EOD Analysis")
+                sanitized_symbol = sanitize_sql_symbol(stock_name)
+                table_name = f"{sanitized_symbol}_SUMMARY"
+                st.caption(
+                    "Trigger a fresh EOD run for this symbol and store the full dataset in "
+                    f"`{table_name}` (`nsedata` database) for deeper review."
+                )
+                eod_days = st.number_input(
+                    "Analysis Window (days)",
+                    min_value=120,
+                    max_value=1250,
+                    value=365,
+                    step=5,
+                    key=f"eod_analysis_days_{sanitized_symbol}"
+                )
+                run_button = st.button(
+                    "Run EOD Analysis",
+                    key=f"run_eod_analysis_{sanitized_symbol}"
+                )
+                if run_button:
+                    with st.spinner("Running EOD analysis and loading summary..."):
+                        try:
+                            eod_runner = EODAnalysis(
+                                stocks_list=[sanitized_symbol],
+                                analysis_days=int(eod_days)
+                            )
+                            eod_df = eod_runner.process_stock_data(sanitized_symbol).copy()
+                            eod_df['Display_Symbol'] = stock_name
+                            load_msg = rd.load_sql_data(
+                                data_to_load=eod_df,
+                                table_name=table_name,
+                                database='nsedata',
+                                load_type='replace',
+                                schema='public'
+                            )
+                            st.session_state.eod_analysis_results[sanitized_symbol] = eod_df
+                            st.session_state.eod_analysis_status[sanitized_symbol] = load_msg
+                            st.success(load_msg)
+                        except Exception as exc:
+                            error_msg = f"Failed to run analysis: {exc}"
+                            st.session_state.eod_analysis_status[sanitized_symbol] = error_msg
+                            st.error(error_msg)
+
+                if sanitized_symbol in st.session_state.eod_analysis_status:
+                    status_msg = st.session_state.eod_analysis_status[sanitized_symbol]
+                    st.markdown(f"**Target Table:** `public.\"{table_name}\"`")
+                    st.markdown(f"**Last Operation:** {status_msg}")
+
+                if sanitized_symbol in st.session_state.eod_analysis_results:
+                    result_df = st.session_state.eod_analysis_results[sanitized_symbol]
+                    if not result_df.empty and 'timestamp' in result_df.columns:
+                        latest_row = result_df.sort_values('timestamp').iloc[-1]
+                        latest_ts = latest_row['timestamp']
+                        timestamp_text = latest_ts.strftime("%Y-%m-%d") if hasattr(latest_ts, 'strftime') else latest_ts
+                        summary_lines = build_eod_signal_summary(latest_row)
+                        st.subheader(f"Latest Signals - {timestamp_text}")
+                        if summary_lines:
+                            for line in summary_lines:
+                                st.markdown(f"- {line}")
+                        else:
+                            st.info("No standout signals detected for the latest session.")
+
+                    st.dataframe(
+                        result_df.sort_values('timestamp', ascending=False).head(200),
+                        use_container_width=True
+                    )
+
+            tab_index += 1
 
         if show_data:
             with tabs[tab_index]:

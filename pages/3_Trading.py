@@ -3,11 +3,14 @@ import streamlit as st
 from common_utils import read_write_sql_data as rd
 import datetime as dt
 import plotly.express as px
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from common_utils.utils import fetch_indicies_sectors_list
 from lightweight_charts.widgets import StreamlitChart
+from common_utils.auth import require_authentication
 
 st.set_page_config(layout="wide")
+
+# Require authentication for this page
+require_authentication()
 
 @st.cache_data
 def load_and_prepare_data():
@@ -61,10 +64,7 @@ def plot_line_chart(data):
 
 
 def display_interactive_dataframe(df):
-    # df.Stock_Name = df.Symbol
     df['TradingView_Link'] = df.Symbol.map(lambda x: "https://in.tradingview.com/chart?symbol=" + x)
-    # df.Symbol = df.Symbol.map(lambda x: f'<a href="{x}" target="_blank">{x.split("=")[-1]}</a>')
-    # st.write(df.to_html(escape=False, index=False, index_names=False), unsafe_allow_html=True)
 
     st.dataframe(df.style
                  .format({
@@ -162,13 +162,6 @@ def create_stock_screener():
         ['All', 'Uptrend', 'Downtrend']
     )
 
-    # Performance Filters
-    # st.sidebar.subheader('Performance Filters')
-    # performance_period = st.sidebar.selectbox(
-    #     'Performance Period',
-    #     ['5 Day', '20 Day', '1 Year']
-    # )
-
     # Price Filters
     st.sidebar.subheader('Price Filters')
     price_range = st.sidebar.slider(
@@ -242,20 +235,6 @@ def create_stock_screener():
         filtered_df = filtered_df[filtered_df['Cls_Abv_EMA60'] > 0]
     if 'Above 200 EMA' in ema_filter:
         filtered_df = filtered_df[filtered_df['Cls_Abv_EMA200'] > 0]
-
-    # Trend filter
-    # if trend_filter == 'Uptrend':
-    #     filtered_df = filtered_df[filtered_df['High_Low'] == 'HH_HL']
-    # elif trend_filter == 'Downtrend':
-    #     filtered_df = filtered_df[filtered_df['High_Low'] == 'LH_LL']
-
-    # # Performance filter
-    # if performance_period == '5 Day':
-    #     filtered_df = filtered_df[filtered_df['Pct_Chg_5D'] >= performance_threshold]
-    # elif performance_period == '20 Day':
-    #     filtered_df = filtered_df[filtered_df['Pct_Chg_20D'] >= performance_threshold]
-    # elif performance_period == '1 Year':
-    #     filtered_df = filtered_df[filtered_df['Pct_Chg_365D'] >= performance_threshold]
 
     # Display results
     st.write(f':rainbow[Found {len(filtered_df)} stocks matching your criteria]')

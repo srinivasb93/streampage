@@ -9,6 +9,7 @@ import datetime as dt
 import logging
 import sys
 import os
+import time
 
 # Add the project root and common_utils directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -81,7 +82,7 @@ class MarketData:
     def fetch_and_load_nse_events():
         output = fetch_nse_data('https://www.nseindia.com/api/event-calendar')
         if not output:
-            logger.info(f"No NSE events found ")
+            logger.info("No NSE events found ")
             return "No data found"
         else:
             # Load data to SQL
@@ -339,6 +340,187 @@ class MarketData:
         load_msg = rd.load_sql_data(all_stocks_df, table_name='ALL_STOCKS')
         return "Success" if "success" in load_msg else "Failure"
 
+    def get_nse_indices_pe_pb_data(self):
+        """
+        Get latest PE/PB/Dividend data for all NSE indices
+        :return: DataFrame with PE/PB/Dividend data
+        """
+        try:
+            # Get all indices list
+            all_indices = self.broad_indices_list + self.sector_indices_list + self.thematic_indices_list
+            
+            pe_pb_data = []
+            current_date = datetime.datetime.now().strftime('%d-%m-%Y')
+            
+            for index in all_indices:
+                try:
+                    # Get latest PE/PB data for the index
+                    table_name = index.replace('&', 'AND').replace(' ', '_') + '_PE_PB_DIV'
+                    latest_data = rd.get_table_data(selected_table=table_name)
+                    
+                    if not latest_data.empty:
+                        # Get the most recent data
+                        latest_record = latest_data.iloc[-1]  # Assuming data is ordered by timestamp
+                        
+                        # Parse and convert numeric values safely
+                        def safe_convert_to_float(value, default=0.0):
+                            """Safely convert value to float, handling concatenated strings"""
+                            if pd.isna(value) or value is None:
+                                return default
+                            
+                            # If it's already a number, return it
+                            if isinstance(value, (int, float)):
+                                return float(value)
+                            
+                            # If it's a string, try to extract the first valid number
+                            if isinstance(value, str):
+                                # Remove any non-numeric characters except decimal point
+                                import re
+                                # Find the first valid number in the string
+                                numbers = re.findall(r'\d+\.?\d*', str(value))
+                                if numbers:
+                                    try:
+                                        return float(numbers[0])
+                                    except ValueError:
+                                        return default
+                                return default
+                            
+                            return default
+                        
+                        pe_pb_data.append({
+                            'index_name': index,
+                            'pe': safe_convert_to_float(latest_record.get('pe', 0)),
+                            'pb': safe_convert_to_float(latest_record.get('pb', 0)),
+                            'div_yield': safe_convert_to_float(latest_record.get('div_yield', 0)),
+                            'timestamp': latest_record.get('timestamp', current_date)
+                        })
+                except Exception:
+                    # If table doesn't exist or error, skip this index
+                    continue
+            
+            if pe_pb_data:
+                df = pd.DataFrame(pe_pb_data)
+                
+                # Ensure all numeric columns are properly typed
+                numeric_columns = ['pe', 'pb', 'div_yield']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                
+                # Remove any rows where all numeric values are 0 (likely invalid data)
+                df = df[~((df['pe'] == 0) & (df['pb'] == 0) & (df['div_yield'] == 0))]
+                
+                return df
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            print(f"Error fetching PE/PB data: {str(e)}")
+            return pd.DataFrame()
+
+    def get_historical_pe_pb_data(self, index_name, days_back=365):
+        """
+        Get historical PE/PB/Dividend data for a specific index
+        :param index_name: Name of the index
+        :param days_back: Number of days to look back
+        :return: DataFrame with historical data
+        """
+        try:
+            table_name = index_name.replace('&', 'AND').replace(' ', '_') + '_PE_PB_DIV'
+            historical_data = rd.get_table_data(selected_table=table_name)
+            
+            if not historical_data.empty:
+                # Convert timestamp to datetime if it's not already
+                if 'timestamp' in historical_data.columns:
+                    historical_data['timestamp'] = pd.to_datetime(historical_data['timestamp'])
+                    
+                    # Filter data for the specified period
+                    cutoff_date = pd.Timestamp.now() - pd.Timedelta(days=days_back)
+                    historical_data = historical_data[historical_data['timestamp'] >= cutoff_date]
+                
+                # Clean and convert numeric columns
+                numeric_columns = ['pe', 'pb', 'div_yield']
+                for col in numeric_columns:
+                    if col in historical_data.columns:
+                        historical_data[col] = pd.to_numeric(historical_data[col], errors='coerce')
+                
+                # Remove rows with all NaN values
+                historical_data = historical_data.dropna(subset=numeric_columns, how='all')
+                
+                return historical_data
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            print(f"Error fetching historical data for {index_name}: {str(e)}")
+            return pd.DataFrame()
+
+    def get_all_indices_historical_analysis(self, days_back=365):
+        """
+        Get historical analysis for all indices
+        :param days_back: Number of days to look back
+        :return: Dictionary with analysis results for each index
+        """
+        try:
+            all_indices = self.broad_indices_list + self.sector_indices_list + self.thematic_indices_list
+            analysis_results = {}
+            
+            for index in all_indices:
+                historical_data = self.get_historical_pe_pb_data(index, days_back)
+                
+                if not historical_data.empty and len(historical_data) > 10:  # Need sufficient data points
+                    # Calculate historical statistics
+                    current_pe = historical_data['pe'].iloc[-1] if 'pe' in historical_data.columns else 0
+                    current_pb = historical_data['pb'].iloc[-1] if 'pb' in historical_data.columns else 0
+                    current_div = historical_data['div_yield'].iloc[-1] if 'div_yield' in historical_data.columns else 0
+                    
+                    # Historical percentiles
+                    pe_percentile = (historical_data['pe'] <= current_pe).mean() * 100 if 'pe' in historical_data.columns else 50
+                    pb_percentile = (historical_data['pb'] <= current_pb).mean() * 100 if 'pb' in historical_data.columns else 50
+                    div_percentile = (historical_data['div_yield'] <= current_div).mean() * 100 if 'div_yield' in historical_data.columns else 50
+                    
+                    # Historical ranges
+                    pe_min, pe_max = historical_data['pe'].min(), historical_data['pe'].max() if 'pe' in historical_data.columns else (0, 0)
+                    pb_min, pb_max = historical_data['pb'].min(), historical_data['pb'].max() if 'pb' in historical_data.columns else (0, 0)
+                    div_min, div_max = historical_data['div_yield'].min(), historical_data['div_yield'].max() if 'div_yield' in historical_data.columns else (0, 0)
+                    
+                    # Trend analysis (last 30 days vs previous 30 days)
+                    if len(historical_data) >= 60:
+                        recent_30 = historical_data.tail(30)
+                        previous_30 = historical_data.iloc[-60:-30]
+                        
+                        pe_trend = recent_30['pe'].mean() - previous_30['pe'].mean() if 'pe' in historical_data.columns else 0
+                        pb_trend = recent_30['pb'].mean() - previous_30['pb'].mean() if 'pb' in historical_data.columns else 0
+                        div_trend = recent_30['div_yield'].mean() - previous_30['div_yield'].mean() if 'div_yield' in historical_data.columns else 0
+                    else:
+                        pe_trend = pb_trend = div_trend = 0
+                    
+                    analysis_results[index] = {
+                        'current_pe': current_pe,
+                        'current_pb': current_pb,
+                        'current_div': current_div,
+                        'pe_percentile': pe_percentile,
+                        'pb_percentile': pb_percentile,
+                        'div_percentile': div_percentile,
+                        'pe_min': pe_min,
+                        'pe_max': pe_max,
+                        'pb_min': pb_min,
+                        'pb_max': pb_max,
+                        'div_min': div_min,
+                        'div_max': div_max,
+                        'pe_trend': pe_trend,
+                        'pb_trend': pb_trend,
+                        'div_trend': div_trend,
+                        'data_points': len(historical_data),
+                        'historical_data': historical_data
+                    }
+            
+            return analysis_results
+            
+        except Exception as e:
+            print(f"Error in historical analysis: {str(e)}")
+            return {}
+
 
 # # Nifty Indicies Site
 
@@ -361,9 +543,13 @@ niftyindices_headers = {
 
 def index_history(symbol,start_date,end_date):
     data = {'cinfo': "{'name':'" + symbol + "','startDate':'" + start_date + "','endDate':'" + end_date + "','indexName':'" + symbol + "'}"}
-    payload = requests.post('https://niftyindices.com/Backpage.aspx/getHistoricalDBtoString', headers=niftyindices_headers,  json=data).json()
+    payload = requests.post('https://niftyindices.com/Backpage.aspx/getHistoricaldatatabletoString', headers=niftyindices_headers,  json=data).json()
     payload = json.loads(payload["d"])
     payload=pd.DataFrame.from_records(payload)
+    payload.rename(columns={'Date': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close'}, inplace=True)
+    payload['timestamp'] = pd.to_datetime(payload['timestamp'])
+    payload['volume'] = 0
+    payload = payload[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
     return payload
 
 def index_pe_pb_div(symbol,start_date,end_date):
@@ -371,6 +557,12 @@ def index_pe_pb_div(symbol,start_date,end_date):
     payload = requests.post('https://niftyindices.com/Backpage.aspx/getpepbHistoricaldataDBtoString', headers=niftyindices_headers,  json=data).json()
     payload = json.loads(payload["d"])
     payload=pd.DataFrame.from_records(payload)
+
+    if payload.empty:
+        return pd.DataFrame()
+    payload.rename(columns={'DATE': 'timestamp', 'Index Name': 'index_name', 'divYield': 'div_yield', 'pe': 'pe', 'pb': 'pb'}, inplace=True)
+    payload['timestamp'] = pd.to_datetime(payload['timestamp'])
+    payload = payload[['timestamp', 'index_name', 'div_yield', 'pe', 'pb']].copy()
     return payload
 
 def get_bhavcopy(date, load=False):
@@ -383,6 +575,98 @@ def get_bhavcopy(date, load=False):
         return payload
     return payload
 
+def load_index_pe_pb_div(symbol='NIFTY 50',start_date='1-1-2007',end_date=datetime.datetime.now().strftime('%d-%m-%Y')):
+    """
+    Load index PE PB Div data to SQL
+    :param symbol: Index symbol or list of index symbols
+    :param start_date: Start date
+    :param end_date: End date
+    :return: Success or Failure message
+    """
+    if isinstance(symbol, list):
+        if len(symbol) == 0:
+            return "No symbols provided"
+        load_msgs = []
+        for index in symbol:
+            symbol_mapping = {"NIFTY100 LIQUID 15": "Nifty100 Liq 15",
+                            "NIFTY MIDCAP LIQUID 15": "Nifty Mid Liq 15",
+                            "NIFTY INDIA DIGITAL": "Nifty Ind Digital",
+                            "NIFTY SMALLCAP 250": "NIFTY SMLCAP 250",
+                            "NIFTY SMALLCAP 50": "NIFTY SMLCAP 50",
+                            "NIFTY SMALLCAP 100": "NIFTY SMLCAP 100",
+                            "NIFTY MIDSMALLCAP 400": "NIFTY MIDSML 400",
+                            "NIFTY MIDCAP SELECT": "NIFTY MID SELECT",
+                            "NIFTY LARGEMIDCAP 250": "NIFTY LARGEMID250",
+                            "NIFTY HEALTHCARE INDEX": "NIFTY HEALTHCARE",
+                            "NIFTY CONSUMER DURABLES": "NIFTY CONSR DURBL",
+                            "NIFTY FINANCIAL SERVICES": "Nifty Fin Service",
+                            "NIFTY PRIVATE BANK": "Nifty Pvt Bank",
+                            "NIFTY INFRASTRUCTURE": "Nifty Infra",
+                            "NIFTY SERVICES SECTOR": "Nifty Serv Sector",
+                            "NIFTY INDIA CONSUMPTION": "Nifty Consumption",
+                            "NIFTY INDIA MANUFACTURING": "NIFTY INDIA MFG"
+                            }
+            table_name = index.replace('&', 'AND').replace(' ', '_') + '_PE_PB_DIV'
+            if index in symbol_mapping.keys():
+                index = symbol_mapping[index]
+ 
+            logger.info("Executing for index: " + index)
+            try:
+                # Fetch max timestamp from the table_name in the database
+                try:
+                    start_date = "1-1-2007"
+                    max_timestamp = rd.get_table_data(selected_table=table_name, query=f'SELECT MAX(timestamp) as timestamp FROM "{table_name.upper()}"')
+                    logger.info("Max timestamp for index: " + index + " is " + str(max_timestamp.iloc[0]['timestamp']))
+                    if not max_timestamp.empty:
+                        start_date = max_timestamp.iloc[0]['timestamp'] + dt.timedelta(days=1)
+                        start_date = pd.to_datetime(start_date).strftime('%d-%m-%Y')
+
+                    # Validate dates before comparison
+                    try:
+                        start_date_parsed = pd.to_datetime(start_date, format='%d-%m-%Y')
+                        end_date_parsed = pd.to_datetime(end_date, format='%d-%m-%Y')
+                        
+                        if start_date_parsed > end_date_parsed:
+                            logger.debug("Skipping data fetch for index: " + index + " as start date is greater than end date")
+                            load_msgs.append(True)
+                            continue
+                    except ValueError as ve:
+                        logger.error(f"Invalid date format for index {index}. Start: {start_date}, End: {end_date}. Error: {str(ve)}")
+                        load_msgs.append(False)
+                        continue
+                except Exception as e:
+                    logger.error("Error in fetching max timestamp for index: " + index + " Error: " + str(e))
+
+                logger.info("Fetching data for index: " + index + " from " + start_date + " to " + end_date)
+                
+                # Convert date format from DD-MM-YYYY to DD-MMM-YYYY for the API call
+                start_date_formatted = pd.to_datetime(start_date, format='%d-%m-%Y').strftime('%d-%b-%Y')
+                end_date_formatted = pd.to_datetime(end_date, format='%d-%m-%Y').strftime('%d-%b-%Y')
+                
+                data_to_load = index_pe_pb_div(index.replace('&', 'AND'), start_date_formatted, end_date_formatted) 
+                if data_to_load.empty:
+                    logger.info("No data found for index or it's already up to date: " + index)
+                    load_msgs.append(True)
+                    continue
+            except Exception as e:
+                logger.error("Error in fetching data for index: " + index + " Error: " + str(e))
+                load_msgs.append(False)
+                continue
+            try:
+                load_msg = rd.load_sql_data(data_to_load, table_name=table_name, load_type='append' if not max_timestamp.empty else 'replace')
+            except Exception as e:
+                logger.error("Error in loading data for index: " + index + " Error: " + str(e))
+                load_msgs.append(False)
+                continue
+            logger.debug(load_msg)
+            load_msgs.append(True if "success" in load_msg else False)
+            time.sleep(1)
+        return "Success" if all(load_msgs) else "Failure"
+    else:
+        data_to_load = index_pe_pb_div(symbol, start_date, end_date)
+        load_msg = rd.load_sql_data(data_to_load, table_name=symbol.replace(' ', '_') + '_PE_PB_DIV', load_type='replace')
+        logger.debug(load_msg)
+        return "Success" if "success" in load_msg else "Failure"
 
 def load_index_and_stocks_data(load_type="Index_data_load", date=None):
     md = MarketData()
@@ -402,6 +686,8 @@ def load_index_and_stocks_data(load_type="Index_data_load", date=None):
         data_load_msg = md.fetch_and_load_nse_events()
     elif load_type == "Bhavcopy_data_load":
         data_load_msg = get_bhavcopy(date, load=True)
+    elif load_type == "Index_pe_pb_div_load":
+        data_load_msg = load_index_pe_pb_div(symbol=md.broad_indices_list + md.sector_indices_list + md.thematic_indices_list)
     else:
         data_load_msg = "Invalid load type specified"
     return data_load_msg
@@ -423,7 +709,7 @@ if __name__ == "__main__":
     # sector_indices_list = []
     # broad_indices_list = []
     # thematic_indices_list = []
-    indices_list = broad_indices_list + sector_indices_list + thematic_indices_list
+    # indices_list = broad_indices_list + sector_indices_list + thematic_indices_list
     md = MarketData()
     # print(md.fetch_and_load_etf_data())
     # print(md.get_corporate_actions_data())
@@ -434,10 +720,11 @@ if __name__ == "__main__":
     # print(md.equity_history('SBIN', 'EQ', '01-01-2023', '01-02-2023'))
     # print(md.security_wise_archive('01-01-2023', '01-01-2024', 'SBIN', series='EQ'))
     # print(md.nse_get_advances_declines())
-    # data = index_pe_pb_div("NIFTY 50", start_date="1-1-2020",
+    # data = index_pe_pb_div("NIFTY INDIA MFG", start_date="1-1-2010",
     #                                      end_date="1-1-2025")
     # print(data)
-    print(md.nse_holidays(type="all", as_df=True, load=True))
+    print(load_index_pe_pb_div(symbol=md.broad_indices_list + md.sector_indices_list + md.thematic_indices_list))
+    # print(md.nse_holidays(type="all", as_df=True, load=True))
     # print(md.load_index_stocks_data(indices_list))
     # print(md.load_all_stocks_table_with_stock_index(indices_list))
     # print(md.get_main_nse_indices_list())

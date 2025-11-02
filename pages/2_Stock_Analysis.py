@@ -515,7 +515,7 @@ def stock_analysis():
         data_src = st.radio("Data Source", ["SQL", "Upstox"], horizontal=True)
         asset = st.radio("Asset Type", ["Stock", "Index"], horizontal=True)
         tables_list = sorted(get_stocks_index_data(asset))
-        default_asset = "TATAMOTORS" if asset == 'Stock' else "NIFTY 50"
+        default_asset = "SBIN" if asset == 'Stock' else "NIFTY 50"
         stock_name = st.selectbox("Select Stock Symbol", tables_list, index=tables_list.index(default_asset))
 
         timeframe_options = get_timeframe_options(data_src)

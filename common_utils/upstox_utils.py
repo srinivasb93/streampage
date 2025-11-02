@@ -52,7 +52,6 @@ def _pg_engine_from_config(db_name: Optional[str] = None):
     host = pg.get('host', 'localhost')
     port = pg.get('port', '5432')
     url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
-    print(url)
     return create_engine(url, pool_size=1, max_overflow=2, pool_timeout=30, pool_recycle=1800)
 
 
@@ -76,7 +75,6 @@ def get_upstox_access_token() -> Optional[str]:
 
             row = conn.execute(q).fetchone()
             if row and row[0]:
-                print(row[0])
                 return row[0]
             logger.error("No non-null Upstox token found in DB")
             return None
@@ -239,7 +237,6 @@ def get_market_quote(instrument_tokens, mode="full"):
     try:
         configuration = upstox_client.Configuration()
         token = get_upstox_access_token()
-        print(token)
         configuration.access_token = token
 
         api_instance = upstox_client.MarketQuoteApi(upstox_client.ApiClient(configuration))

@@ -240,7 +240,7 @@ def ensure_registry_table_exists(database='nsedata'):
         create_statement = text("""
             CREATE TABLE IF NOT EXISTS public."STOCKS_IN_DB" (
                 "SYMBOL" VARCHAR(255) PRIMARY KEY,
-                "instrument_key" VARCHAR(255),
+                "instrument_token" VARCHAR(255),
                 "last_updated" TIMESTAMP
             );
         """)

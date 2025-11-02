@@ -96,7 +96,7 @@ class EODAnalysis:
         if self.analysis_days >= 200:
             data['EMA_60'] = round(data['close'].ewm(span=60, min_periods=60).mean(), 2)
             data['EMA_200'] = round(data['close'].ewm(span=200).mean(), 2)
-        data['Reg_5'] = self.slope(data['close'], n=6)
+        data['Reg_5'] = self.slope(data['close'], n=5)
         data['Reg_5'] = round(data['Reg_5'], 2)
         data['Reg_18'] = round(ta.linreg(data['close'], length=18), 2)
         data['Reg_5_Chg'] = round(data['Reg_5'] - data['Reg_5'].shift(), 1)

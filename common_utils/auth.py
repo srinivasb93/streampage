@@ -1,6 +1,7 @@
 """
 Centralized authentication module for the Streamlit application.
 This module provides authentication functions that can be imported by all pages.
+Uses Streamlit's built-in session state for reliable authentication.
 """
 import streamlit as st
 import logging
@@ -68,6 +69,7 @@ def login_form():
     
     st.title("🔐 Login to Analytics Dashboard")
     st.markdown("Please enter your credentials to access the dashboard.")
+    st.info("ℹ️ Your session will remain active for 4 hours of use.")
     
     with st.form("login_form"):
         email = st.text_input("Email", placeholder="Enter your email")
@@ -78,10 +80,13 @@ def login_form():
             if email and password:
                 user = check_credentials(email, password)
                 if user:
+                    # Set session state
                     st.session_state.authenticated = True
                     st.session_state.user_email = email
                     st.session_state.user_id = user['user_id']
+                    
                     st.success("Login successful!")
+                    logger.info(f"User logged in: {email}")
                     st.rerun()
                 else:
                     st.error("Invalid email or password. Please try again.")
@@ -91,9 +96,14 @@ def login_form():
 
 def logout():
     """Logout user and clear session state."""
+    user_email = st.session_state.get('user_email', 'Unknown')
+    
+    # Clear session state
     st.session_state.authenticated = False
     st.session_state.user_email = None
     st.session_state.user_id = None
+    
+    logger.info(f"User logged out: {user_email}")
     st.rerun()
 
 
@@ -110,8 +120,9 @@ def require_authentication():
     if 'user_id' not in st.session_state:
         st.session_state.user_id = None
     
-    # Authentication check
+    # Check if authenticated in session state
     if not st.session_state.authenticated:
+        # Show login form
         login_form()
         st.stop()
 
@@ -124,4 +135,3 @@ def get_current_user():
             'email': st.session_state.get('user_email')
         }
     return None
-

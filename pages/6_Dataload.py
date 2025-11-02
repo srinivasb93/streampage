@@ -333,7 +333,7 @@ def _perform_data_load_core(data_type='Equity', load_freq='Daily', **kwargs):
                                    analysis_days=kwargs.get('analysis_days', 365))
 
         load_status = eod_analysis.run_analysis()
-        print(load_status)
+        logger.info(load_status)
         eod_analysis.print_summary_data_analysis()
     elif data_type == 'MF' and load_freq == 'Historical':
         load_status = mf_hist_load.extract_and_load_latest_mf_hist_data()
@@ -1642,24 +1642,15 @@ def dataload():
             with load_cols[2]:
                 st.subheader("Manual Historical Load")
                 # Fetch all stocks to populate the selector
-                all_stocks_df = rd.get_table_data(selected_table='ALL_STOCKS', selected_database='nsedata')
-                etfs_df = rd.get_table_data(selected_table='ETF_DATA', selected_database='nsedata')
-                instruments_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
-                stocks_in_db = rd.get_table_data(
-                    selected_table='STOCKS_IN_DB', selected_database='nsedata')["SYMBOL"].values.tolist()
+                all_stocks_df = rd.get_table_data(selected_table='instruments', selected_database='trading_db')
+                stocks_in_db = rd.get_table_data(selected_table='STOCKS_IN_DB', selected_database='nsedata')["SYMBOL"].values.tolist()
+                trading_symbols = sorted(all_stocks_df['trading_symbol'].unique().tolist())
 
-                if not all_stocks_df.empty:
-
-                    selected_stock = st.selectbox(
-                        "Select Stock to Load Historical Data",
-                        options=sorted(set(all_stocks_df['SYMBOL'].values.tolist() + etfs_df["Symbol"].values.tolist())),
-                        index=None,
-                        placeholder="Choose a stock..."
-                    )
+                if trading_symbols:
+                    selected_stock = st.selectbox("Select Stock to Load Historical Data", options=trading_symbols, index=None, placeholder="Choose a stock...")
 
                     if selected_stock:
-                        instrument_key = instruments_df[
-                            instruments_df['trading_symbol'] == selected_stock]['instrument_token'].iloc[0]
+                        instrument_token = all_stocks_df[all_stocks_df['trading_symbol'] == selected_stock]['instrument_token'].iloc[0]
 
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.button(f"Load History for {selected_stock}", width='content'):
@@ -1668,10 +1659,10 @@ def dataload():
                                 end_date = dt.date.today() - dt.timedelta(days=1)
                                 load_msg = rd.load_stock_history(selected_stock, start_date, end_date)
                                 if "success" in load_msg:
-                                    rd.add_stock_to_registry(selected_stock, instrument_key, database='nsedata')
+                                    rd.add_stock_to_registry(selected_stock, instrument_token, database='nsedata')
                                 display_toaster('Success' if 'success' in load_msg else 'Failure', load_msg)
                             elif data_source == 'Upstox':
-                                load_historical_stock_data_in_chunks(selected_stock, instrument_key)
+                                load_historical_stock_data_in_chunks(selected_stock, instrument_token)
 
                         if selected_stock in stocks_in_db:
                             st.markdown("<br>", unsafe_allow_html=True)

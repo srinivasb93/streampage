@@ -1,0 +1,41 @@
+# Streamlit Configuration File
+# This file configures various Streamlit settings including session behavior
+
+[server]
+# Increase timeout settings to prevent premature session disconnection
+maxUploadSize = 200
+enableXsrfProtection = true
+enableCORS = false
+
+# Session cookie settings
+cookieSecret = "your_secret_cookie_key_change_in_production_abc123"
+
+# Increase session timeout to reduce frequent logouts
+# User will stay logged in for this duration of inactivity (in seconds)
+# Default is 600 seconds (10 minutes), increasing to 4 hours
+maxMessageAge = 14400
+
+[browser]
+# Keep the connection alive longer
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[client]
+# Show loading animation when reconnecting
+showErrorDetails = true
+toolbarMode = "minimal"
+
+[runner]
+# Increase timeouts to prevent session drops
+# These settings help maintain the session longer
+magicEnabled = true
+fastReruns = true
+
+[logger]
+# Logging level
+level = "info"
+
+# Session State Configuration
+# Note: Streamlit handles session state automatically, but these settings help
+

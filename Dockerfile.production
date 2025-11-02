@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Only runtime tools needed in final image
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt /app/requirements.txt
+COPY pandas_ta-0.4.67b0.tar.gz /app/pandas_ta-0.4.67b0.tar.gz
+COPY vendor/dist/lightweight_charts-5.1.0.post1+custom-py3-none-any.whl /tmp/lightweight_charts-5.1.0.post1+custom-py3-none-any.whl
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir /app/pandas_ta-0.4.67b0.tar.gz \
+    && pip install --no-cache-dir /tmp/lightweight_charts-5.1.0.post1+custom-py3-none-any.whl \
+    && pip install --no-cache-dir -r /app/requirements.txt
+
+# Copy application code
+COPY . /app
+
+# Create a non-root user for security
+RUN useradd -m -u 1000 streamlit && chown -R streamlit:streamlit /app
+USER streamlit
+
+EXPOSE 8501
+
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+

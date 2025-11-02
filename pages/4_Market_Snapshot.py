@@ -169,6 +169,21 @@ def market_snapshot():
             asset_snapshot = md.get_nse_indices_data() if radio_btn == "Live" else rd.get_table_data(
                 selected_table='NSE_INDICES_DATA')
             asset_snapshot.fillna(0, inplace=True)
+            
+            # Convert all object type columns to fix Arrow serialization issues
+            # NSE API returns many columns as object type which causes PyArrow errors
+            for col in asset_snapshot.columns:
+                if asset_snapshot[col].dtype == 'object':
+                    # Try to convert to numeric first
+                    converted = pd.to_numeric(asset_snapshot[col], errors='coerce')
+                    if not converted.isna().all():  # If conversion was successful for at least some values
+                        asset_snapshot[col] = converted.fillna(0)
+                        # Convert integer-like columns to int64
+                        if col in ['advances', 'declines', 'unchanged', 'totalTradedVolume']:
+                            asset_snapshot[col] = asset_snapshot[col].astype('int64')
+                    else:
+                        # If numeric conversion failed, keep as string
+                        asset_snapshot[col] = asset_snapshot[col].astype('str')
 
             metrics_cols = st.columns([.75, .75, .75, 1, 1, 1], vertical_alignment="top")
 
@@ -192,13 +207,10 @@ def market_snapshot():
                               asset_snapshot['indexSymbol'] == 'NIFTY SMLCAP 100']['variation'].values[0])
 
             asset_snapshot = asset_snapshot[["indexSymbol", "percentChange", 'advances', 'declines',
-                                             "perChange365d", "perChange30d"]]
+                                             "perChange365d", "perChange30d"]].copy()
 
-            sectors_data = asset_snapshot[asset_snapshot['indexSymbol'].isin(sectors_list)]
-            indices_data = asset_snapshot[asset_snapshot['indexSymbol'].isin(indices_list)]
-
-            sectors_data[['advances', 'declines']] = sectors_data[['advances', 'declines']].astype('int64')
-            indices_data[['advances', 'declines']] = indices_data[['advances', 'declines']].astype('int64')
+            sectors_data = asset_snapshot[asset_snapshot['indexSymbol'].isin(sectors_list)].copy()
+            indices_data = asset_snapshot[asset_snapshot['indexSymbol'].isin(indices_list)].copy()
 
             sectors_data['ADR'] = sectors_data['advances'] / (
                         sectors_data['advances'] + sectors_data['declines']) * 100
@@ -256,6 +268,21 @@ def market_snapshot():
             # Get market indices data
             indices_data = md.get_nse_indices_data()
             indices_data.fillna(0, inplace=True)
+            
+            # Convert all object type columns to fix Arrow serialization issues
+            # NSE API returns many columns as object type which causes PyArrow errors
+            for col in indices_data.columns:
+                if indices_data[col].dtype == 'object':
+                    # Try to convert to numeric first
+                    converted = pd.to_numeric(indices_data[col], errors='coerce')
+                    if not converted.isna().all():  # If conversion was successful for at least some values
+                        indices_data[col] = converted.fillna(0)
+                        # Convert integer-like columns to int64
+                        if col in ['advances', 'declines', 'unchanged', 'totalTradedVolume']:
+                            indices_data[col] = indices_data[col].astype('int64')
+                    else:
+                        # If numeric conversion failed, keep as string
+                        indices_data[col] = indices_data[col].astype('str')
             
             if indices_data is not None and not indices_data.empty:
                 # Key Market Metrics
@@ -961,13 +988,15 @@ def market_snapshot():
                             with chart_col1:
                                 st.plotly_chart(
                                     create_opportunity_score_chart(opportunities_df), 
-                                    width='stretch'
+                                    use_container_width=True,
+                                    config={'displayModeBar': False}
                                 )
                             
                             with chart_col2:
                                 st.plotly_chart(
                                     create_percentile_scatter_chart(analysis_df), 
-                                    width='stretch'
+                                    use_container_width=True,
+                                    config={'displayModeBar': False}
                                 )
                         
                         # Show tables if selected
@@ -1040,7 +1069,8 @@ def market_snapshot():
                     if chart_type in ["📈 Interactive Charts", "📊 Both Tables & Charts"]:
                         st.plotly_chart(
                             create_trend_analysis_chart(analysis_df), 
-                            width='stretch'
+                            use_container_width=True,
+                            config={'displayModeBar': False}
                         )
                     
                     # Show trend tables if selected
@@ -1131,7 +1161,8 @@ def market_snapshot():
                             if chart_type in ["📈 Interactive Charts", "📊 Both Tables & Charts"]:
                                 st.plotly_chart(
                                     create_historical_time_series(selected_index, historical_data),
-                                    width='stretch'
+                                    use_container_width=True,
+                                    config={'displayModeBar': False}
                                 )
                             
                             # Show historical statistics

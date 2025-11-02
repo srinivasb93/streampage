@@ -2,18 +2,21 @@
 # This file configures various Streamlit settings including session behavior
 
 [server]
-# Increase timeout settings to prevent premature session disconnection
+# Server configuration
 maxUploadSize = 200
 enableXsrfProtection = true
-enableCORS = false
+# enableCORS must be true when enableXsrfProtection is true
+# This is required for Streamlit's CSRF protection to work properly
 
-# Session cookie settings
+# IMPORTANT: This is Streamlit's BUILT-IN security feature, NOT the cookie manager we removed!
+# Used for CSRF protection and session cookie encryption (required by Streamlit)
+# Change this to a secure random string in production
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
 cookieSecret = "your_secret_cookie_key_change_in_production_abc123"
 
-# Increase session timeout to reduce frequent logouts
-# User will stay logged in for this duration of inactivity (in seconds)
-# Default is 600 seconds (10 minutes), increasing to 4 hours
-maxMessageAge = 14400
+# Note: Session timeout is managed by Streamlit automatically
+# Sessions persist as long as the browser tab is open and WebSocket connection is active
+# This is ideal for our use case with session state authentication
 
 [browser]
 # Keep the connection alive longer

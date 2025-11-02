@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  streampage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: streampage-app
+    ports:
+      - "8501:8501"
+    environment:
+      # Database configuration
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-trading_user}
+      - DB_PASSWORD=${DB_PASSWORD:-password123}
+      - DB_NAME=${DB_NAME:-nsedata}
+      - DB_TRADING=${DB_TRADING:-trading_db}
+      
+    volumes:
+      # Mount config file if you want to modify it without rebuilding
+      - ./.streamlit/config.toml:/app/.streamlit/config.toml:ro
+      
+      # Mount logs directory to persist logs
+      - ./logs:/app/logs
+      
+      # Optional: Mount config.ini if you want to modify it externally
+      - ./config.ini:/app/config.ini:ro
+      
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Optional: Connect to database network if using containerized database
+    # networks:
+    #   - app-network
+
+# Optional: Define networks
+# networks:
+#   app-network:
+#     driver: bridge
+

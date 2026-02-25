@@ -91,6 +91,14 @@ UPSTOX_TIMEFRAME_OPTIONS = [
     ("Monthly", "months"),
 ]
 
+QUICK_INDICATOR_PRESETS = [
+    {"label": "EMA 20", "indicator": "EMA", "period": 20, "color": "#F39C12"},
+    {"label": "EMA 60", "indicator": "EMA", "period": 60, "color": "#1F77B4"},
+    {"label": "EMA 200", "indicator": "EMA", "period": 200, "color": "#8E44AD"},
+    {"label": "LINREG 5", "indicator": "LINREG", "period": 5, "color": "#27AE60"},
+    {"label": "RSI 14", "indicator": "RSI", "period": 14, "color": "#E74C3C"},
+]
+
 
 def get_timeframe_options(source):
     return SQL_TIMEFRAME_OPTIONS if source == 'SQL' else UPSTOX_TIMEFRAME_OPTIONS
@@ -181,7 +189,7 @@ def load_openchart_stock_data(symbol, unit, interval='1'):
 
 
 # Data Extraction
-def extract_stock_data(stock_name, data_source='SQL', period='days', interval='1', asset_type='stock'):
+def extract_stock_data(stock_name, data_source='SQL', period='Daily', interval='1', asset_type='stock'):
     df = pd.DataFrame()
 
     if data_source == 'SQL':
@@ -507,7 +515,34 @@ def add_indicator_line(chart, df, indicator, params):
 
 def stock_analysis():
     # Streamlit UI
-    header_col, replay_button, pattern_col, theme_col = st.columns([0.25, 0.43, 0.12, 0.1], gap='small')
+    def indicator_exists(indicator_name: str, period: int) -> bool:
+        return any(int(instance.get('period', 0)) == int(period) for instance in st.session_state.indicators.get(indicator_name, []))
+
+    def quick_indicator_exists(indicator_name: str, period: int) -> bool:
+        return any(int(instance.get('period', 0)) == int(period) and instance.get('source') == 'quick_toggle' for instance in st.session_state.indicators.get(indicator_name, []))
+
+    def add_quick_indicator(indicator_name: str, period: int, color: str) -> None:
+        indicator_list = st.session_state.indicators.setdefault(indicator_name, [])
+        if quick_indicator_exists(indicator_name, period) or indicator_exists(indicator_name, period):
+            return
+        indicator_list.append({"period": period, "color_code": color, "source": 'quick_toggle'})
+
+    def remove_quick_indicator(indicator_name: str, period: int) -> None:
+        indicator_list = st.session_state.indicators.get(indicator_name, [])
+        if not indicator_list:
+            return
+        filtered = []
+        removed = False
+        for instance in indicator_list:
+            matches = int(instance.get('period', 0)) == int(period) and instance.get('source') == 'quick_toggle'
+            if matches and not removed:
+                removed = True
+                continue
+            filtered.append(instance)
+        if filtered:
+            st.session_state.indicators[indicator_name] = filtered
+        elif indicator_name in st.session_state.indicators:
+            del st.session_state.indicators[indicator_name]
 
     # Sidebar
     with st.sidebar:
@@ -574,6 +609,10 @@ def stock_analysis():
 
         if st.button("Clear All Indicators"):
             st.session_state.indicators.clear()
+            for preset in QUICK_INDICATOR_PRESETS:
+                toggle_key = f"quick_toggle_{preset['indicator']}_{preset['period']}"
+                if toggle_key in st.session_state:
+                    st.session_state[toggle_key] = False
 
         st.header("View Options")
         show_summary = st.checkbox("Show Summary")
@@ -583,17 +622,76 @@ def stock_analysis():
         show_data = st.checkbox("Show Raw Data")
 
     # Chart Section (Always Visible)
-    dark_theme = theme_col.checkbox("Dark Theme", value=True)
-    apply_patterns = pattern_col.checkbox("Apply Patterns")
+    if 'chart_theme' not in st.session_state:
+        st.session_state.chart_theme = 'dark'
+    current_theme = st.session_state.chart_theme
+
+    header_col, toggle_controls_col, replay_controls_col, theme_col = st.columns([0.08, 0.58, 0.29, 0.05], gap='small', vertical_alignment='top')
     header_col.subheader(f":rainbow[{stock_name}]")
+
+    theme_symbol = "\U0001f319" if current_theme == 'dark' else "\u2600\ufe0f"
+    if theme_col.button(theme_symbol, help="Toggle chart theme"):
+        st.session_state.chart_theme = 'light' if current_theme == 'dark' else 'dark'
+        current_theme = st.session_state.chart_theme
+        theme_symbol = "\U0001f319" if current_theme == 'dark' else "\u2600\ufe0f"
+
+    toggle_widget = getattr(st, "toggle", st.checkbox)
+
+    def _chunk_controls(items, size):
+        for idx in range(0, len(items), size):
+            yield items[idx:idx + size]
+
+    toggle_entries = [{
+        'kind': 'patterns',
+        'label': "Apply Patterns",
+        'key': "apply_patterns_toggle"
+    }]
+    for preset in QUICK_INDICATOR_PRESETS:
+        toggle_entries.append({
+            'kind': 'preset',
+            'label': preset['label'],
+            'key': f"quick_toggle_{preset['indicator']}_{preset['period']}",
+            'preset': preset
+        })
+
+    apply_patterns_state = st.session_state.get("apply_patterns_toggle", False)
+    with toggle_controls_col:
+        for row in _chunk_controls(toggle_entries, 6):
+            cols = st.columns(len(row), gap='small')
+            for entry, col in zip(row, cols):
+                with col:
+                    if entry['kind'] == 'patterns':
+                        apply_patterns_state = toggle_widget(entry['label'], key=entry['key'])
+                    else:
+                        preset = entry['preset']
+                        toggle_key = entry['key']
+                        if toggle_key not in st.session_state:
+                            st.session_state[toggle_key] = quick_indicator_exists(preset['indicator'], preset['period'])
+                        toggle_state = toggle_widget(preset['label'], key=toggle_key)
+                        quick_active = quick_indicator_exists(preset['indicator'], preset['period'])
+                        currently_active = indicator_exists(preset['indicator'], preset['period'])
+                        if toggle_state and not quick_active and not currently_active:
+                            add_quick_indicator(preset['indicator'], preset['period'], preset['color'])
+                        elif not toggle_state and quick_active:
+                            remove_quick_indicator(preset['indicator'], preset['period'])
+    apply_patterns = apply_patterns_state
+
+    with replay_controls_col:
+        replay_button_cols = st.columns(3, gap='small')
+        prev_clicked = replay_button_cols[0].button("Prev Day", icon="🔙")
+        next_clicked = replay_button_cols[1].button("Next Day", icon="🔜")
+        play_clicked = replay_button_cols[2].button("Play|Pause", icon="⏯️")
 
     num_subcharts = len([ind for ind in st.session_state.indicators if ind in ['RSI', 'MACD']])
     total_height = 700 + (num_subcharts * 100)
     chart_placeholder = st.empty()
 
     timeframe_lookup = {label: value for label, value in timeframe_options}
-    theme_name = 'dark' if dark_theme else 'default'
+    theme_name = 'dark' if current_theme == 'dark' else 'default'
     subchart_height = 450
+
+    if not data_replay and st.session_state.current_replay_index == -1 and not df.empty:
+        st.session_state.current_replay_index = len(df) - 1
 
     def fetch_dataframe_for_label(label):
         value = timeframe_lookup[label]
@@ -644,20 +742,14 @@ def stock_analysis():
                 sub_chart = StreamlitChart(height=subchart_height, toolbox=True, scale_candles_only=True)
                 create_tv_chart(sub_chart, stock_name, sub_df, theme=theme_name)
 
-
-    with replay_button:
-        col1, col2, col3 = st.columns([1, 1, 1], gap='small')
-        with col1:
-            if st.button("⏪ Previous Day"):
-                st.session_state.current_replay_index = max(0, st.session_state.current_replay_index - 1)
-                update_chart_data()
-        with col2:
-            if st.button("⏩ Next Day"):
-                st.session_state.current_replay_index = min(len(df) - 1, st.session_state.current_replay_index + 1)
-                update_chart_data()
-        with col3:
-            if st.button("▶️ Play/Pause"):
-                st.session_state.is_playing = not st.session_state.is_playing
+    if prev_clicked:
+        st.session_state.current_replay_index = max(0, st.session_state.current_replay_index - 1)
+        update_chart_data()
+    if next_clicked:
+        st.session_state.current_replay_index = min(len(df) - 1, st.session_state.current_replay_index + 1)
+        update_chart_data()
+    if play_clicked:
+        st.session_state.is_playing = not st.session_state.is_playing
 
     if data_replay:
         if st.session_state.current_replay_index == -1 or replay_date != st.session_state.last_replay_date:
@@ -1019,7 +1111,7 @@ def stock_analysis():
 
                     st.dataframe(
                         result_df.sort_values('timestamp', ascending=False).head(200),
-                        use_container_width=True
+                        width='stretch'
                     )
 
             tab_index += 1

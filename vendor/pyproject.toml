@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lightweight-charts"
+version = "5.1.0.post1+custom"
+description = "Customized build of lightweight-charts for local project use."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "Custom Build" }]
+keywords = ["tradingview", "charts", "streamlit", "custom"]
+dependencies = [
+    "pandas",
+    "pywebview>=5.0.5",
+]
+
+[tool.setuptools]
+packages = ["lightweight_charts"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+lightweight_charts = ["**/*.js", "**/*.css", "**/*.html", "**/*.json"]

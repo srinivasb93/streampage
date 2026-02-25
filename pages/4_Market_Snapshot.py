@@ -389,8 +389,17 @@ def market_snapshot():
             st.markdown("#### 🚀 Top Gainers Analysis")
 
             df = rd.get_table_data(selected_database='nsedata', selected_table='EOD_Summary')
-            df = df[['timestamp', 'Symbol', 'close', 'Pct_Chg', 'volume', 'RSI_14', 'EMA_20', 'EMA_60', 'EMA_200']]
-            df.rename(columns={'close': 'Close', 'Pct_Chg': 'Pct_Chg_D', 'volume': 'Volume'}, inplace=True)
+            df = df[['timestamp', 'Symbol', 'close', 'Pct_Chg', 'Pct_Chg_5D', 'Pct_Chg_20D',
+                     'volume', 'Vol_Avg20', 'RSI_14', 'EMA_20', 'EMA_60', 'EMA_200']]
+            df.rename(
+                columns={
+                    'close': 'Close',
+                    'Pct_Chg': 'Pct_Chg_D',
+                    'volume': 'Volume',
+                    'Vol_Avg20': 'Avg_Vol_20D'
+                },
+                inplace=True
+            )
             df.fillna(0, inplace=True)
             
             # Top performers by percentage change
@@ -1406,32 +1415,166 @@ def market_snapshot():
         
         # Trading Recommendations
         st.markdown("### 💡 Trading Recommendations")
-        
-        rec_col1, rec_col2, rec_col3 = st.columns(3)
-        
-        with rec_col1:
-            st.markdown("**🎯 Short-term Opportunities**")
-            st.markdown("""
-            - **AEGISLOG**: Strong momentum, high RSI (72)
-            - **INDIANB**: Above all EMAs, good volume
-            - **MON100**: Strong uptrend, high RSI (81.5)
-            """)
-        
-        with rec_col2:
-            st.markdown("**📊 Medium-term Watch**")
-            st.markdown("""
-            - **TATASTEEL**: Above EMAs, moderate RSI
-            - **JSL**: Above EMAs, good momentum
-            - **POWERGRID**: Above EMAs, moderate RSI
-            """)
-        
-        with rec_col3:
-            st.markdown("**⚠️ Risk Management**")
-            st.markdown("""
-            - **AEGISLOG**: High RSI, consider profit booking
-            - **MON100**: Very high RSI (81.5), overbought
-            - **IDEA**: High volume, monitor for reversal
-            """)
+
+        try:
+            latest_date = df['timestamp'].max()
+            latest_df = df[df['timestamp'] == latest_date].copy()
+
+            if latest_df.empty:
+                st.info("No EOD summary available for trading recommendations.")
+            else:
+                latest_df['Volume_vs_Avg20'] = np.where(
+                    latest_df['Avg_Vol_20D'] > 0,
+                    latest_df['Volume'] / latest_df['Avg_Vol_20D'],
+                    np.nan
+                )
+                latest_df['Volume_vs_Avg20'] = latest_df['Volume_vs_Avg20'].replace([np.inf, -np.inf], np.nan).fillna(0)
+
+                latest_df['ema_stack'] = (
+                    (latest_df['Close'] > latest_df['EMA_20']) &
+                    (latest_df['EMA_20'] > latest_df['EMA_60']) &
+                    (latest_df['EMA_60'] > latest_df['EMA_200'])
+                )
+
+                short_term = latest_df[
+                    (latest_df['Pct_Chg_D'] >= 2)
+                    & (latest_df['RSI_14'].between(55, 70))
+                    & (latest_df['Volume_vs_Avg20'] >= 1.2)
+                    & (latest_df['Close'] > latest_df['EMA_20'])
+                ].copy()
+                short_term['Insight'] = short_term.apply(
+                    lambda row: f"{row['Pct_Chg_D']:.1f}% today | RSI {row['RSI_14']:.1f} | Vol x{row['Volume_vs_Avg20']:.1f}",
+                    axis=1
+                )
+                short_term = short_term.sort_values(['Pct_Chg_D', 'Volume_vs_Avg20'], ascending=False).head(5)
+
+                medium_term = latest_df[
+                    latest_df['ema_stack']
+                    & (latest_df['Pct_Chg_20D'] >= 5)
+                    & (latest_df['RSI_14'].between(50, 70))
+                ].copy()
+                medium_term['Insight'] = medium_term.apply(
+                    lambda row: f"{row['Pct_Chg_20D']:.1f}% in 20D | RSI {row['RSI_14']:.1f}",
+                    axis=1
+                )
+                medium_term = medium_term.sort_values(['Pct_Chg_20D', 'RSI_14'], ascending=False).head(5)
+
+                overbought = latest_df[
+                    (latest_df['RSI_14'] >= 75)
+                    | ((latest_df['Pct_Chg_D'] >= 5) & (latest_df['RSI_14'] >= 70))
+                ].copy()
+                overbought['Alert'] = overbought.apply(
+                    lambda row: f"Overbought: RSI {row['RSI_14']:.1f}, {row['Pct_Chg_D']:.1f}% today",
+                    axis=1
+                )
+
+                breakdown = latest_df[
+                    (latest_df['Close'] < latest_df['EMA_20'])
+                    & (latest_df['Pct_Chg_D'] <= -2)
+                ].copy()
+                breakdown['Alert'] = breakdown.apply(
+                    lambda row: f"Breakdown: {row['Pct_Chg_D']:.1f}% drop, below EMA20",
+                    axis=1
+                )
+
+                risk_alerts = pd.concat(
+                    [
+                        overbought[['Symbol', 'Close', 'Pct_Chg_D', 'RSI_14', 'Alert']],
+                        breakdown[['Symbol', 'Close', 'Pct_Chg_D', 'RSI_14', 'Alert']]
+                    ],
+                    ignore_index=True
+                )
+                if not risk_alerts.empty:
+                    risk_alerts = risk_alerts.drop_duplicates(subset='Symbol').sort_values(
+                        ['RSI_14', 'Pct_Chg_D'],
+                        ascending=[False, True]
+                    ).head(5)
+
+                st.caption(f"Based on EOD data as of {latest_date:%d %b %Y}")
+
+                rec_col1, rec_col2, rec_col3 = st.columns(3)
+
+                with rec_col1:
+                    st.markdown("**⚡ Short-term Momentum**")
+                    if short_term.empty:
+                        st.write("No qualifying setups today.")
+                    else:
+                        short_term_display = short_term[
+                            ['Symbol', 'Close', 'Pct_Chg_D', 'RSI_14', 'Volume_vs_Avg20', 'Insight']
+                        ].copy()
+                        short_term_display.rename(
+                            columns={
+                                'Pct_Chg_D': 'Pct Chg %',
+                                'RSI_14': 'RSI',
+                                'Volume_vs_Avg20': 'Vol x20D'
+                            },
+                            inplace=True
+                        )
+                        st.dataframe(
+                            short_term_display.style.format(
+                                {
+                                    'Close': '{:.2f}',
+                                    'Pct Chg %': '{:.2f}',
+                                    'RSI': '{:.1f}',
+                                    'Vol x20D': '{:.1f}'
+                                }
+                            ),
+                            hide_index=True
+                        )
+
+                with rec_col2:
+                    st.markdown("**📈 Medium-term Trend Watch**")
+                    if medium_term.empty:
+                        st.write("No medium-term setups detected.")
+                    else:
+                        medium_term_display = medium_term[
+                            ['Symbol', 'Close', 'Pct_Chg_20D', 'RSI_14', 'Insight']
+                        ].copy()
+                        medium_term_display.rename(
+                            columns={
+                                'Pct_Chg_20D': '20D %',
+                                'RSI_14': 'RSI'
+                            },
+                            inplace=True
+                        )
+                        st.dataframe(
+                            medium_term_display.style.format(
+                                {
+                                    'Close': '{:.2f}',
+                                    '20D %': '{:.2f}',
+                                    'RSI': '{:.1f}'
+                                }
+                            ),
+                            hide_index=True
+                        )
+
+                with rec_col3:
+                    st.markdown("**⚠️ Risk Management Alerts**")
+                    if risk_alerts.empty:
+                        st.write("No immediate risk alerts.")
+                    else:
+                        risk_display = risk_alerts[['Symbol', 'Close', 'Pct_Chg_D', 'RSI_14', 'Alert']].copy()
+                        risk_display.rename(
+                            columns={
+                                'Pct_Chg_D': 'Pct Chg %',
+                                'RSI_14': 'RSI'
+                            },
+                            inplace=True
+                        )
+                        st.dataframe(
+                            risk_display.style.format(
+                                {
+                                    'Close': '{:.2f}',
+                                    'Pct Chg %': '{:.2f}',
+                                    'RSI': '{:.1f}'
+                                }
+                            ),
+                            hide_index=True
+                        )
+
+        except Exception as e:
+            st.error(f"Unable to build trading recommendations: {str(e)}")
+            st.info("Please confirm EOD_Summary data is available and contains the required columns.")
         
         # Footer
         st.markdown("---")

@@ -1,0 +1,8 @@
+.history/
+.venv/
+.vscode/
+.pytest_cache/
+.pytest_cache/
+.env
+*.log
+*.pyc

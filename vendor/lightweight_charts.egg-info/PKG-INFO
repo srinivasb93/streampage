@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: lightweight-charts
+Version: 5.1.0.post1+custom
+Summary: Customized build of lightweight-charts for local project use.
+Author: Custom Build
+License-Expression: MIT
+Keywords: tradingview,charts,streamlit,custom
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: pandas
+Requires-Dist: pywebview>=5.0.5
+
+Customized lightweight-charts build bundled with project-specific tweaks.

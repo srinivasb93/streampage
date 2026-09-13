@@ -1,5 +1,4 @@
 import datetime
-from jugaad_data import nse
 import pandas as pd
 import sys
 from common_utils import read_write_sql_data as rd

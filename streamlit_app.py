@@ -1,5 +1,12 @@
 import logging
+
 import streamlit as st
+
+# Must run before importing anything that reads settings at import time.
+# Resolves DB_TARGET (local vs the EC2 Postgres over the SSM tunnel).
+from common_utils.env_loader import load_environment
+
+load_environment()
 
 from common_utils.logging_utils import configure_logging
 from common_utils.auth import require_authentication, logout

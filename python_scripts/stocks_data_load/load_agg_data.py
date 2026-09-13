@@ -3,6 +3,7 @@ from common_utils import read_write_sql_data as rd
 from python_scripts.candle import find_candle
 import logging
 from common_utils.logging_utils import configure_logging
+from common_utils.utils import fetch_indicies_sectors_list
 import pandas_ta as ta
 
 configure_logging()
@@ -64,6 +65,11 @@ def resample_daily_data(daily_data, resample_to='W'):
 def stocks_agg_data_load():
     stock_list_df = rd.get_table_data(selected_table='STOCKS_IN_DB')
     stock_list = stock_list_df['SYMBOL'].values.tolist()
+    indices = fetch_indicies_sectors_list(required='indices') or []
+    sectors = fetch_indicies_sectors_list(required='sectors') or []
+    indices_list = [index.replace(" ", "_") for index in indices]
+    sectors_list = [sector.replace(" ", "_") for sector in sectors]
+    
     # indices_df = rd.get_table_data(selected_table="STOCK_INDICES")
     # indices_list = indices_df['name'].values.tolist()
     # sectors_df = rd.get_table_data(selected_table="STOCK_SECTORS")
@@ -71,7 +77,7 @@ def stocks_agg_data_load():
 
     # stocks_indices_sectors = stock_list + indices_list + sectors_list
 
-    stocks_indices_sectors = stock_list
+    stocks_indices_sectors = stock_list + indices_list + sectors_list
 
     failed_agg_load = []
     combined_agg_data = pd.DataFrame()

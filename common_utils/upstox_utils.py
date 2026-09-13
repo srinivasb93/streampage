@@ -5,11 +5,20 @@ import upstox_client
 import logging
 try:
     from .logging_utils import configure_logging
+    from .postgres_settings import (
+        default_trading_database,
+        postgres_connect_args,
+        postgres_database_url,
+    )
 except ImportError:
     from logging_utils import configure_logging
+    from postgres_settings import (
+        default_trading_database,
+        postgres_connect_args,
+        postgres_database_url,
+    )
 import requests
 import os
-import configparser
 from sqlalchemy import create_engine, text
 from typing import Optional
 
@@ -22,37 +31,21 @@ DATABASE = 'nsedata'
 
 
 def _pg_engine_from_config(db_name: Optional[str] = None):
-    """Create a SQLAlchemy engine using [postgres] from config.ini with env var overrides.
+    """Create a SQLAlchemy engine from environment (same vars as the FastAPI backend).
 
     Avoids importing read_write_sql_data to prevent circular imports.
     """
-    cfg = configparser.RawConfigParser()
-    cfg.read('config.ini')
-    if 'postgres' not in cfg:
-        raise RuntimeError("Missing [postgres] section in config.ini")
-    
-    pg = cfg['postgres']
-    
-    # Allow overriding [postgres] settings via environment variables
-    # Supported env vars: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DATABASE
-    overrides = {
-        'host': os.getenv('POSTGRES_HOST'),
-        'port': os.getenv('POSTGRES_PORT'),
-        'user': os.getenv('POSTGRES_USER'),
-        'password': os.getenv('POSTGRES_PASSWORD'),
-        'database': os.getenv('POSTGRES_DATABASE'),
-    }
-    for key, value in overrides.items():
-        if value:
-            pg[key] = value
-    
-    database = db_name or pg.get('database', 'trading_db')
-    user = pg.get('user')
-    password = pg.get('password')
-    host = pg.get('host', 'localhost')
-    port = pg.get('port', '5432')
-    url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
-    return create_engine(url, pool_size=1, max_overflow=2, pool_timeout=30, pool_recycle=1800)
+    database = db_name or default_trading_database()
+    url = postgres_database_url(database)
+    return create_engine(
+        url,
+        pool_size=1,
+        max_overflow=2,
+        pool_timeout=30,
+        pool_recycle=1800,
+        pool_pre_ping=True,
+        connect_args=postgres_connect_args(),
+    )
 
 
 def get_upstox_access_token() -> Optional[str]:
@@ -66,8 +59,8 @@ def get_upstox_access_token() -> Optional[str]:
         with engine.connect() as conn:
             schema = 'public'
             table = 'users'
-            token_col = 'upstox_access_token'
-            ts_col = 'upstox_access_token_expiry'
+            token_col = 'upstox_analytics_token'
+            ts_col = 'upstox_analytics_token_expiry'
             if ts_col:
                 q = text(f"SELECT \"{token_col}\" FROM {schema}.\"{table}\" WHERE \"{token_col}\" IS NOT NULL ORDER BY \"{ts_col}\" DESC LIMIT 1")
             else:

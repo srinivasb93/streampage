@@ -332,13 +332,39 @@ def _perform_data_load_core(data_type='Equity', load_freq='Daily', **kwargs):
                                    adhoc_date=kwargs.get('date', dt.date.today()),
                                    analysis_days=kwargs.get('analysis_days', 365))
 
+        load_results = []
+
         load_status = eod_analysis.run_analysis()
-        logger.info(load_status)
+        load_results.append(load_status)
+        logger.info('Daily EOD summary load status: %s', load_status)
         eod_analysis.print_summary_data_analysis()
+
+        eow_analysis = EODAnalysis(
+            stocks_list=stocks_indices_sectors,
+            analysis_days=260,
+            analysis_period='by_count',
+            timeframe='W'
+        )
+        eow_status = eow_analysis.run_analysis()
+        load_results.append(eow_status)
+        logger.info('Weekly EOW summary load status: %s', eow_status)
+
+        eom_analysis = EODAnalysis(
+            stocks_list=stocks_indices_sectors,
+            analysis_days=120,
+            analysis_period='by_count',
+            timeframe='M'
+        )
+        eom_status = eom_analysis.run_analysis()
+        load_results.append(eom_status)
+        logger.info('Monthly EOM summary load status: %s', eom_status)
+        load_status = 'Success' if all(str(status).lower() == 'success' for status in load_results) else 'Failed'
     elif data_type == 'MF' and load_freq == 'Historical':
         load_status = mf_hist_load.extract_and_load_latest_mf_hist_data()
     elif data_type in ['Index_data_load', "Index_Stocks_data_load", "Stocks_Ref_data_load", "FnO_snapshot_load",
-                       "NSE_Events_load", "ETF_data_load", "Bhavcopy_data_load", "Index_pe_pb_div_load"]:
+                       "NSE_Events_load", "ETF_data_load", "Bhavcopy_data_load", "Index_pe_pb_div_load",
+                       "Stocks_PE_load", "Corporate_Actions_load",
+                       "Stocks_PE_backfill"]:
         if data_type == 'Bhavcopy_data_load':
             # Date should be the previous business day if present time is before 18:00 and today's date if after 18:00
             # After applying the above condition, if the date is a weekend, then the date should be the previous business day
@@ -589,7 +615,8 @@ INDEX_DATA_LOAD_TASKS = [
     'FnO_snapshot_load',
     'NSE_Events_load',
     'ETF_data_load',
-    'Bhavcopy_data_load'
+    'Bhavcopy_data_load',
+    'Stocks_PE_load'
 ]
 
 
@@ -1345,7 +1372,10 @@ def dataload():
                                                         "NSE_Events_load",
                                                         "ETF_data_load",
                                                         "Bhavcopy_data_load",
-                                                        "Index_pe_pb_div_load"],)
+                                                        "Index_pe_pb_div_load",
+                                                        "Stocks_PE_load",
+                                                        "Stocks_PE_backfill",
+                                                        "Corporate_Actions_load"],)
                 
                 # Add date selection for Bhavcopy
                 if index_load_type == 'Bhavcopy_data_load':
@@ -1420,12 +1450,17 @@ def dataload():
                                     else:
                                         st.warning(f"No stock found in STOCKS_IN_DB for {symbol}")
                                 rd.load_sql_data(data_to_load=stocks_to_update, table_name='STOCKS_IN_DB', load_type='replace', database='nsedata', schema='public')
+                                # to_sql('replace') drops the table, taking the unique
+                                # SYMBOL index with it; without this the next registry
+                                # upsert fails on ON CONFLICT.
+                                rd.registry_constraint_invalidated(database='nsedata')
+                                rd.ensure_registry_table_exists(database='nsedata')
                                 st.success(f"Instrument_token updated successfully for {symbols_to_update}!")
                         else:
                             st.error("No stocks found in STOCKS_IN_DB or instruments table in trading_db")
 
             st.markdown('---')
-            st.markdown('### Check and remove duplicate data from the tables referred in STOCKS_IN_DB')
+            st.markdown('### Remove duplicate data from the tables referred in STOCKS_IN_DB')
             if st.button('Check and remove duplicate data'):
                 with st.spinner("Checking and removing duplicate data..."):
                     stocks_to_update = rd.get_table_data("nsedata", "STOCKS_IN_DB")
@@ -1705,7 +1740,12 @@ def dataload():
 
             # UI for selection
             load_type = st.radio("Select Load Type", ["Full History", "Daily Update"], horizontal=True)
-            data_source = st.selectbox("Select Data Source", ["openchart", "nsepython", "jugaad_data"], index=0, placeholder="Choose a data source...")  
+            data_source = st.selectbox(
+                "Select Data Source",
+                ["nse_api"],
+                index=0,
+                placeholder="Choose a data source..."
+            )
 
             col1, col2 = st.columns(2, width='stretch') 
             with col1:

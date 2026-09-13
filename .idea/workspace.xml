@@ -4,148 +4,123 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="requiremnets updated">
+    <list default="true" id="e09d4dfc-9624-479a-9a8b-0984b9f1daad" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.ask2agent.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/streampage.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/streampage.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Dockerfile.production" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile.production" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/STREAM_DATA.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/algo_app.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/algo_utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/backtest.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/backtest_claude.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/backtest_latest.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/backtest_new.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/chilli_order_app.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/claude_order.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/claude_order_page.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/claude_ui_page.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/combined_orders.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/common_utils/read_write_sql_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/common_utils/read_write_sql_data.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data_analysis.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data_analysis_grok.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/grok_order_backup.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/grok_order_deepseek.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/grok_upstox_order.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/kite_api_playground.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/latest_order_app.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/marketsummary.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/mutual_fund_analyzer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/mutual_fund_scraping.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/mutualfund_grok.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/new_page_claude.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/order_new.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/order_page.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/perplexity_order.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyqt_order_page.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/python_scripts/stocks_data_load/bhav_copy_extract.py" beforeDir="false" afterPath="$PROJECT_DIR$/python_scripts/stocks_data_load/bhav_copy_extract.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/screener.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/stock_replay1.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/stock_replay2.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/summary.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_file.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_kite.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_upstox.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/updated_order_page.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/upstox_utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/vectorbt_streamlit.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/websocket_manager.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/yfinancecharts.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/zerodha_order.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/zerodha_order_page.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_C:/Users/sba400/projects/streampage" value="3AI3jT35sl8mOlhl9JELbKl8X80" />
+    </persistenceIdMap>
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="204" />
+  </component>
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="HTML File" />
         <option value="Python Script" />
       </list>
     </option>
   </component>
-  <component name="Git.Rebase.Settings">
-    <option name="NEW_BASE" value="main" />
-  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory">{
-  &quot;lastFilter&quot;: {
-    &quot;state&quot;: &quot;OPEN&quot;,
-    &quot;assignee&quot;: &quot;srinivasb93&quot;
-  }
-}</component>
-  <component name="GithubPullRequestsUISettings">{
-  &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/srinivasb93/streampage.git&quot;,
-    &quot;accountId&quot;: &quot;149ee33d-d811-421c-844f-b461c5c7e8c3&quot;
-  }
-}</component>
-  <component name="ProblemsViewState">
-    <option name="selectedTabId" value="CurrentFile" />
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
   </component>
   <component name="ProjectColorInfo">{
-  &quot;associatedIndex&quot;: 1
+  &quot;associatedIndex&quot;: 5
 }</component>
-  <component name="ProjectId" id="2iNKV2k40AA1x56g9GLTkswybz4" />
-  <component name="ProjectLevelVcsManager" settingsEditedManually="true">
-    <ConfirmationsSetting value="2" id="Add" />
-  </component>
+  <component name="ProjectId" id="3AI3jT35sl8mOlhl9JELbKl8X80" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_ADD_EXTERNAL_FILES": "true",
-    "DefaultHtmlFileTemplate": "HTML File",
-    "Python.EOD_analysis_claude.executor": "Run",
-    "Python.EOD_analysis_latest.executor": "Run",
-    "Python.abstract.executor": "Run",
-    "Python.agg_eod_data_analysis.executor": "Debug",
-    "Python.analysis.executor": "Run",
-    "Python.backtest (1).executor": "Run",
-    "Python.backtest.executor": "Debug",
-    "Python.backtest_etf.executor": "Run",
-    "Python.bonus_factor.executor": "Run",
-    "Python.bse_corp_actions_download.executor": "Run",
-    "Python.claude_file.executor": "Run",
-    "Python.combine_bonus_split_data.executor": "Run",
-    "Python.daily_data_load.executor": "Run",
-    "Python.daily_data_load_archive.executor": "Debug",
-    "Python.dividend_factor.executor": "Run",
-    "Python.dummy1.executor": "Debug",
-    "Python.dummy2.executor": "Run",
-    "Python.dummy3.executor": "Run",
-    "Python.dummy_test.executor": "Run",
-    "Python.fetch_data.executor": "Run",
-    "Python.get_quarter_year_data.executor": "Debug",
-    "Python.goldbees.executor": "Run",
-    "Python.grok.executor": "Run",
-    "Python.investment.executor": "Run",
-    "Python.linreg.executor": "Debug",
-    "Python.load_agg_data (1).executor": "Run",
-    "Python.load_agg_data.executor": "Debug",
-    "Python.long_invest.executor": "Run",
-    "Python.long_invest_new.executor": "Run",
-    "Python.market_data.executor": "Run",
-    "Python.mf_hist_data_load.executor": "Debug",
-    "Python.mf_snapshot_with_prev_nav.executor": "Debug",
-    "Python.new_page.executor": "Debug",
-    "Python.new_page_claude.executor": "Debug",
-    "Python.nsepy_hist_data_load.executor": "Run",
-    "Python.nsepy_index_dataload.executor": "Debug",
-    "Python.nsetools_exp.executor": "Run",
-    "Python.portfolio.executor": "Run",
-    "Python.sample.executor": "Debug",
-    "Python.selenium_file.executor": "Debug",
-    "Python.split_factor.executor": "Run",
-    "Python.stock_analysis.executor": "Run",
-    "Python.stock_analysis_gpt.executor": "Run",
-    "Python.stock_replay.executor": "Run",
-    "Python.stock_replay2.executor": "Debug",
-    "Python.strategy_tester.executor": "Run",
-    "Python.streamlit.executor": "Debug",
-    "Python.streamlit_app.executor": "Run",
-    "Python.summary.executor": "Debug",
-    "Python.test_file.executor": "Run",
-    "Python.test_upstox.executor": "Debug",
-    "Python.testing1.executor": "Debug",
-    "Python.trading.executor": "Debug",
-    "Python.treand_analysis_latest.executor": "Run",
-    "Python.trend_analysis.executor": "Run",
-    "Python.trend_analysis2.executor": "Debug",
-    "Python.tv_final.executor": "Run",
-    "Python.tv_qt_new.executor": "Run",
-    "Python.tv_qt_stock_analysis.executor": "Run",
-    "Python.tv_stock_analysis.executor": "Run",
-    "Python.update_bonus_split_data.executor": "Run",
-    "Python.update_portfolio.executor": "Debug",
-    "Python.utils.executor": "Run",
-    "Python.websocket_manager.executor": "Run",
-    "Python.widgets.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "com.codeium.enabled": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "C:/Users/sba400/MyProject/streampage",
-    "settings.editor.selected.configurable": "terminal"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.data_fetch.executor&quot;: &quot;Run&quot;,
+    &quot;Python.read_write_sql_data.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;ai.playground.ignore.import.keys.banner.in.settings&quot;: &quot;true&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/sba400/projects/streampage&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
-  <component name="RecentsManager">
-    <key name="CopyFile.RECENT_KEYS">
-      <recent name="C:\Users\sba400\MyProject\streampage" />
-      <recent name="C:\Users\sba400\MyProject\streampage\ml" />
-      <recent name="C:\Users\sba400\MyProject\streampage\class_utils" />
-      <recent name="C:\Users\sba400\MyProject\streampage\common_utils" />
-      <recent name="C:\Users\sba400\MyProject\streampage\python_scripts\stocks_data_load\utilities" />
-    </key>
-    <key name="MoveFile.RECENT_KEYS">
-      <recent name="C:\Users\sba400\MyProject\streampage\backtest_python" />
-      <recent name="C:\Users\sba400\MyProject\streampage" />
-      <recent name="C:\Users\sba400\MyProject\streampage\pages" />
-    </key>
-  </component>
-  <component name="RunManager" selected="Python.dummy_test">
-    <configuration default="true" type="PythonConfigurationType" factoryName="Python">
+}</component>
+  <component name="RunManager" selected="Python.data_fetch">
+    <configuration name="data_fetch" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="streampage" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -154,35 +129,13 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
-      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="backtest_etf" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="streampage" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/python_scripts/backtest_strategy/backtest_etf.py" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/data_fetch.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -191,7 +144,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="dummy_test" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="read_write_sql_data" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="streampage" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -200,12 +153,13 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
-      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/common_utils" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/dummy_test.py" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/common_utils/read_write_sql_data.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -214,465 +168,62 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="nsepy_hist_data_load" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="streampage" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="streamlit" type="PythonConfigurationType" factoryName="Python">
-      <module name="streampage" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/streamlit_app.py" />
-      <option name="PARAMETERS" value="python -m streamlit run" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="test_upstox" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="streampage" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_upstox.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="update_bonus_split_data" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="streampage" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="SDK_NAME" value="Python 3.8 (streampage)" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\sba400\MyProject\streampage" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_bonus_split_data.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <list>
-      <item itemvalue="Python.streamlit" />
-      <item itemvalue="Python.backtest_etf" />
-      <item itemvalue="Python.dummy_test" />
-      <item itemvalue="Python.test_upstox" />
-      <item itemvalue="Python.nsepy_hist_data_load" />
-      <item itemvalue="Python.update_bonus_split_data" />
-    </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.dummy_test" />
-        <item itemvalue="Python.backtest_etf" />
-        <item itemvalue="Python.test_upstox" />
-        <item itemvalue="Python.nsepy_hist_data_load" />
-        <item itemvalue="Python.update_bonus_split_data" />
+        <item itemvalue="Python.data_fetch" />
+        <item itemvalue="Python.read_write_sql_data" />
       </list>
     </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-a5bc9544c897-aa17d162503b-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-243.23654.177" />
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-PY-253.31033.139" />
+        <option value="bundled-python-sdk-2653e85de345-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.31033.139" />
       </set>
     </attachedChunks>
   </component>
-  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="423dbf81-b167-4ffa-bea3-58dde248b55d" name="Changes" comment="" />
-      <created>1719325614855</created>
+      <changelist id="e09d4dfc-9624-479a-9a8b-0984b9f1daad" name="Changes" comment="" />
+      <created>1772266392125</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1719325614855</updated>
+      <updated>1772266392125</updated>
+      <workItem from="1772266393147" duration="2445000" />
+      <workItem from="1772434738025" duration="6000" />
     </task>
-    <task id="LOCAL-00001" summary="Initial Code">
-      <option name="closed" value="true" />
-      <created>1723809907657</created>
-      <option name="number" value="00001" />
-      <option name="presentableId" value="LOCAL-00001" />
-      <option name="project" value="LOCAL" />
-      <updated>1723809907657</updated>
-    </task>
-    <task id="LOCAL-00002" summary="Latest Code">
-      <option name="closed" value="true" />
-      <created>1741525480687</created>
-      <option name="number" value="00002" />
-      <option name="presentableId" value="LOCAL-00002" />
-      <option name="project" value="LOCAL" />
-      <updated>1741525480687</updated>
-    </task>
-    <task id="LOCAL-00003" summary="docker update">
-      <option name="closed" value="true" />
-      <created>1741526049655</created>
-      <option name="number" value="00003" />
-      <option name="presentableId" value="LOCAL-00003" />
-      <option name="project" value="LOCAL" />
-      <updated>1741526049655</updated>
-    </task>
-    <task id="LOCAL-00004" summary="requiremnets updated">
-      <option name="closed" value="true" />
-      <created>1741526288582</created>
-      <option name="number" value="00004" />
-      <option name="presentableId" value="LOCAL-00004" />
-      <option name="project" value="LOCAL" />
-      <updated>1741526288582</updated>
-    </task>
-    <task id="LOCAL-00005" summary="requiremnets updated">
-      <option name="closed" value="true" />
-      <created>1741526358343</created>
-      <option name="number" value="00005" />
-      <option name="presentableId" value="LOCAL-00005" />
-      <option name="project" value="LOCAL" />
-      <updated>1741526358343</updated>
-    </task>
-    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
-  <component name="Vcs.Log.Tabs.Properties">
-    <option name="TAB_STATES">
-      <map>
-        <entry key="MAIN">
-          <value>
-            <State>
-              <option name="FILTERS">
-                <map>
-                  <entry key="branch">
-                    <value>
-                      <list>
-                        <option value="origin/main" />
-                      </list>
-                    </value>
-                  </entry>
-                </map>
-              </option>
-            </State>
-          </value>
-        </entry>
-      </map>
-    </option>
-  </component>
-  <component name="VcsManagerConfiguration">
-    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
-    <MESSAGE value="Initial Code" />
-    <MESSAGE value="Latest Code" />
-    <MESSAGE value="docker update" />
-    <MESSAGE value="requiremnets updated" />
-    <option name="LAST_COMMIT_MESSAGE" value="requiremnets updated" />
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/portfolio.py</url>
-          <line>32</line>
+          <url>file://$PROJECT_DIR$/common_utils/read_write_sql_data.py</url>
+          <line>488</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/mf_data_load/mf_hist_data_load.py</url>
-          <line>60</line>
-          <option name="timeStamp" value="4" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/mf_data_load/mf_snapshot_with_prev_nav.py</url>
-          <line>78</line>
-          <option name="timeStamp" value="5" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_bonus_split_data.py</url>
-          <line>25</line>
-          <option name="timeStamp" value="6" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py</url>
-          <line>153</line>
-          <option name="timeStamp" value="12" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py</url>
-          <line>22</line>
-          <option name="timeStamp" value="15" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py</url>
-          <line>21</line>
-          <option name="timeStamp" value="17" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_index_dataload.py</url>
-          <line>25</line>
-          <option name="timeStamp" value="19" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py</url>
-          <line>96</line>
-          <option name="timeStamp" value="21" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_load.py</url>
-          <line>278</line>
-          <option name="timeStamp" value="22" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/nsepy_hist_data_load.py</url>
-          <line>89</line>
-          <option name="timeStamp" value="23" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/testing1.py</url>
-          <line>83</line>
-          <option name="timeStamp" value="24" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/get_market_data/market_data.py</url>
-          <line>180</line>
-          <option name="timeStamp" value="26" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/trading.py</url>
-          <line>126</line>
-          <option name="timeStamp" value="27" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/analysis/EOD_analysis_latest.py</url>
-          <line>316</line>
-          <option name="timeStamp" value="28" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/class_utils/CandlePatterns.py</url>
-          <line>7</line>
-          <option name="timeStamp" value="30" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/dummy1.py</url>
-          <line>7</line>
-          <option name="timeStamp" value="34" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/load_agg_data.py</url>
-          <line>34</line>
-          <option name="timeStamp" value="41" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/dummy3.py</url>
-          <line>468</line>
-          <option name="timeStamp" value="67" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/stock_replay2.py</url>
-          <line>208</line>
-          <option name="timeStamp" value="69" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/stock_replay2.py</url>
-          <line>4</line>
-          <option name="timeStamp" value="70" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/tv_qt_new.py</url>
-          <line>53</line>
-          <option name="timeStamp" value="72" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/sample.py</url>
-          <line>79</line>
-          <option name="timeStamp" value="73" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/utilities/update_portfolio.py</url>
-          <line>211</line>
-          <option name="timeStamp" value="74" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/analysis/EOD_analysis.py</url>
-          <line>357</line>
-          <option name="timeStamp" value="76" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/trend_analysis2.py</url>
-          <line>472</line>
-          <option name="timeStamp" value="77" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/analysis.py</url>
-          <line>13</line>
-          <option name="timeStamp" value="78" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/analysis.py</url>
-          <line>52</line>
-          <option name="timeStamp" value="79" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/analysis/EOD_analysis.py</url>
-          <line>137</line>
-          <option name="timeStamp" value="80" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/summary.py</url>
-          <line>39</line>
-          <option name="timeStamp" value="85" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/analysis/agg_eod_data_analysis.py</url>
-          <line>21</line>
-          <option name="timeStamp" value="86" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/stocks_data_load/daily_data_load.py</url>
-          <line>195</line>
-          <option name="timeStamp" value="87" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/backtest.py</url>
-          <line>10</line>
-          <option name="timeStamp" value="88" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/backtest_claude.py</url>
-          <line>201</line>
-          <option name="timeStamp" value="89" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/adhoc/dummy1.py</url>
-          <line>26</line>
-          <option name="timeStamp" value="91" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/archive/daily_data_load_archive.py</url>
-          <line>217</line>
-          <option name="timeStamp" value="93" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/get_market_data/market_data.py</url>
-          <line>80</line>
-          <option name="timeStamp" value="94" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/get_market_data/market_data.py</url>
-          <line>92</line>
-          <option name="timeStamp" value="95" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/get_market_data/market_data.py</url>
-          <line>90</line>
-          <option name="timeStamp" value="96" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/strategies/long_invest.py</url>
-          <line>164</line>
-          <option name="timeStamp" value="97" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/get_market_data/market_data.py</url>
-          <line>229</line>
-          <option name="timeStamp" value="98" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/strategies/long_invest_new.py</url>
-          <line>153</line>
-          <option name="timeStamp" value="100" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/strategy_tester.py</url>
-          <line>48</line>
-          <option name="timeStamp" value="106" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/strategy_tester.py</url>
-          <line>13</line>
-          <option name="timeStamp" value="107" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/strategies/long_invest_new.py</url>
-          <line>52</line>
-          <option name="timeStamp" value="110" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/strategies/goldbees.py</url>
-          <line>105</line>
-          <option name="timeStamp" value="112" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/python_scripts/backtest_strategy/backtest_etf.py</url>
-          <line>153</line>
-          <option name="timeStamp" value="117" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/test_upstox.py</url>
-          <line>38</line>
-          <option name="timeStamp" value="120" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/test_upstox.py</url>
-          <line>33</line>
-          <option name="timeStamp" value="122" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/test_upstox.py</url>
-          <line>28</line>
-          <option name="timeStamp" value="123" />
+          <url>file://$PROJECT_DIR$/common_utils/read_write_sql_data.py</url>
+          <line>336</line>
+          <option name="timeStamp" value="2" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
-    <watches-manager>
-      <configuration name="PythonConfigurationType">
-        <watch expression="stock_split_info" />
-      </configuration>
-    </watches-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/streampage$data_fetch.coverage" NAME="data_fetch Coverage Results" MODIFIED="1772268385082" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/streampage$read_write_sql_data.coverage" NAME="read_write_sql_data Coverage Results" MODIFIED="1772268054227" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/common_utils" />
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
   </component>
 </project>

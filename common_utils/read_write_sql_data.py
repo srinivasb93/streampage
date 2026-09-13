@@ -2,40 +2,30 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 import logging
-from .logging_utils import configure_logging
-import configparser
+try:
+    from .logging_utils import configure_logging
+except ImportError:
+    from logging_utils import configure_logging
 import os
 import threading
 import datetime as dt
+try:
+    from . import nse_api
+except ImportError:
+    import nse_api
 
-# Import all required data source libraries
-from openchart import NSEData
-from nsepython import index_history
-
-
-# --- Configuration ---
-
-def get_config():
-    """Reads database credentials from config.ini and applies env var overrides."""
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-
-    # Allow overriding [postgres] settings via environment variables
-    # Supported env vars: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DATABASE
-    if 'postgres' in config:
-        overrides = {
-            'host': os.getenv('POSTGRES_HOST'),
-            'port': os.getenv('POSTGRES_PORT'),
-            'user': os.getenv('POSTGRES_USER'),
-            'password': os.getenv('POSTGRES_PASSWORD'),
-            'database': os.getenv('POSTGRES_DATABASE'),
-        }
-        for key, value in overrides.items():
-            if value:
-                config['postgres'][key] = value
-
-    return config
-
+try:
+    from .postgres_settings import (
+        default_nse_database,
+        postgres_connect_args,
+        postgres_database_url,
+    )
+except ImportError:
+    from postgres_settings import (
+        default_nse_database,
+        postgres_connect_args,
+        postgres_database_url,
+    )
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -52,8 +42,7 @@ def get_engine(database_name=None):
     """
     global _ENGINES
     if database_name is None:
-        config = get_config()['postgres']
-        database_name = config.get('database', 'nsedata')
+        database_name = default_nse_database()
 
     if database_name in _ENGINES:
         return _ENGINES[database_name]
@@ -63,22 +52,25 @@ def get_engine(database_name=None):
             return _ENGINES[database_name]
 
         try:
-            config = get_config()['postgres']
-            db_url = (
-                f"postgresql+psycopg2://{config['user']}:{config['password']}@"
-                f"{config['host']}:{config['port']}/{database_name}"
-            )
+            db_url = postgres_database_url(database_name)
 
             # FIX: Reduced pool size and overflow to prevent "too many clients" error.
             # This makes the application more conservative with its connection usage.
             # If this error persists, consider increasing `max_connections` in your
             # postgresql.conf file on the database server itself.
+            #
+            # pool_pre_ping is what makes a remote/tunneled database usable: when the
+            # SSM port-forward is restarted, every pooled socket is dead but still
+            # looks checked-in. Without the pre-ping the next query fails instead of
+            # transparently reconnecting.
             new_engine = create_engine(
                 db_url,
                 pool_size=5,
                 max_overflow=10,
                 pool_timeout=30,
-                pool_recycle=1800
+                pool_recycle=1800,
+                pool_pre_ping=True,
+                connect_args=postgres_connect_args()
             )
             _ENGINES[database_name] = new_engine
             logger.info(f"Connection pool created successfully for database: '{database_name}'.")
@@ -233,8 +225,29 @@ def upsert_record(database, table_name, data_dict, conflict_column):
         logger.error(f"Failed to upsert record into '{table_name}': {e}")
         return False
 
+# Databases whose STOCKS_IN_DB has been verified this process, so the check costs
+# one round-trip per database rather than one per symbol in a data-load loop.
+_REGISTRY_READY = set()
+
+STOCKS_IN_DB_SYMBOL_INDEX = "STOCKS_IN_DB_SYMBOL_uidx"
+
+
 def ensure_registry_table_exists(database='nsedata'):
-    """Checks if the STOCKS_IN_DB table exists and creates it if it doesn't."""
+    """Create STOCKS_IN_DB if absent and guarantee SYMBOL is uniquely indexed.
+
+    `upsert_record`'s ON CONFLICT ("SYMBOL") requires a unique or exclusion
+    constraint on that column, and Postgres raises InvalidColumnReference without
+    one. CREATE TABLE alone does not get us there: the table is routinely written by
+    pandas `to_sql`, which creates no constraints at all and, with
+    if_exists='replace', DROPS the table and any constraint it had. So the unique
+    index is asserted separately every time rather than inferred from the CREATE.
+
+    A unique index (not a PRIMARY KEY) is used because it can be added to an
+    existing table without rewriting it or requiring SYMBOL to be NOT NULL, and it
+    satisfies ON CONFLICT inference identically.
+    """
+    if database in _REGISTRY_READY:
+        return True
     try:
         engine = get_engine(database)
         create_statement = text("""
@@ -244,174 +257,178 @@ def ensure_registry_table_exists(database='nsedata'):
                 "last_updated" TIMESTAMP
             );
         """)
+        index_statement = text(
+            f'CREATE UNIQUE INDEX IF NOT EXISTS "{STOCKS_IN_DB_SYMBOL_INDEX}" '
+            'ON public."STOCKS_IN_DB" ("SYMBOL");')
         with engine.connect() as conn:
             with conn.begin():
                 conn.execute(create_statement)
-        logger.info("Ensured 'STOCKS_IN_DB' table exists.")
+                conn.execute(index_statement)
+        logger.info("Ensured 'STOCKS_IN_DB' table and unique SYMBOL index exist.")
+        _REGISTRY_READY.add(database)
         return True
     except SQLAlchemyError as e:
+        # The usual cause is pre-existing duplicate symbols, which must be resolved
+        # by hand — silently deleting rows here would destroy real data.
         logger.error(f"Failed to create or verify 'STOCKS_IN_DB' table: {e}")
+        try:
+            duplicates = get_table_data(
+                selected_database=database,
+                query='SELECT "SYMBOL", COUNT(*) AS n FROM public."STOCKS_IN_DB" '
+                      'GROUP BY 1 HAVING COUNT(*) > 1 ORDER BY n DESC LIMIT 20')
+            if duplicates is not None and not duplicates.empty:
+                logger.error("Duplicate SYMBOLs block the unique index: %s",
+                             duplicates.to_dict('records'))
+        except SQLAlchemyError:
+            pass
         return False
+
+
+def registry_constraint_invalidated(database='nsedata'):
+    """Forget that `database` was verified, after something may have dropped the index.
+
+    Call this after any `to_sql` replace of STOCKS_IN_DB so the next registry write
+    re-creates the unique index instead of failing on ON CONFLICT.
+    """
+    _REGISTRY_READY.discard(database)
+
 
 def add_stock_to_registry(stock_symbol, instrument_token, database='nsedata'):
     """
     SPECIFIC USE CASE: A wrapper for upsert_record to add a stock to the STOCKS_IN_DB table.
     """
+    ensure_registry_table_exists(database=database)
     stock_data = {"SYMBOL": stock_symbol, "instrument_token": instrument_token, "last_updated": dt.datetime.now()}
-    return upsert_record(database=database, table_name="STOCKS_IN_DB", data_dict=stock_data, conflict_column="SYMBOL")
+    if upsert_record(database=database, table_name="STOCKS_IN_DB",
+                     data_dict=stock_data, conflict_column="SYMBOL"):
+        return True
+
+    # The unique index can disappear under us: any to_sql(if_exists='replace') on
+    # STOCKS_IN_DB drops the table, and this process may already have it cached as
+    # verified. Re-assert and retry once so a registry write heals itself rather
+    # than depending on every replace site remembering to invalidate.
+    registry_constraint_invalidated(database=database)
+    if not ensure_registry_table_exists(database=database):
+        return False
+    return upsert_record(database=database, table_name="STOCKS_IN_DB",
+                         data_dict=stock_data, conflict_column="SYMBOL")
 
 
-# --- ENHANCED: Index and Sector Data Loading with Multi-Level Fallback ---
-
-# FIX: Create a single, cached instance of the NSEData class from openchart
-_NSE_DATA_INSTANCE = None
-
-
-def get_nse_data_instance():
-    """Returns a single instance of openchart.NSEData, creating it if necessary."""
-    global _NSE_DATA_INSTANCE
-    if _NSE_DATA_INSTANCE is None:
-        _NSE_DATA_INSTANCE = NSEData()
-    return _NSE_DATA_INSTANCE
-
-
-def _format_openchart_data(df):
-    """Standardizes the DataFrame from openchart."""
-    df.reset_index(inplace=True)
-    df.rename(columns={'Timestamp': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close',
-                       'Volume': 'volume'}, inplace=True)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
+_NSE_SESSION = None
+_INDEX_SYMBOL_MAPPING = {
+    "NIFTY100 LIQUID 15": "NIFTY100 LIQUID 15",
+    "NIFTY MIDCAP LIQUID 15": "NIFTY MIDCAP LIQUID 15",
+    "NIFTY INDIA DIGITAL": "NIFTY INDIA DIGITAL",
+    "NIFTY SMALLCAP 250": "NIFTY SMLCAP 250",
+    "NIFTY SMALLCAP 50": "NIFTY SMLCAP 50",
+    "NIFTY SMALLCAP 100": "NIFTY SMLCAP 100",
+    "NIFTY MIDSMALLCAP 400": "NIFTY MIDSML 400",
+    "NIFTY MIDCAP SELECT": "NIFTY MID SELECT",
+    "NIFTY LARGEMIDCAP 250": "NIFTY LARGEMID250",
+    "NIFTY HEALTHCARE INDEX": "NIFTY HEALTHCARE",
+    "NIFTY CONSUMER DURABLES": "NIFTY CONSR DURBL",
+    "NIFTY FINANCIAL SERVICES": "NIFTY FIN SERVICE",
+    "NIFTY PRIVATE BANK": "NIFTY PRIVATE BANK",
+    "NIFTY INFRASTRUCTURE": "NIFTY INFRASTRUCTURE",
+    "NIFTY SERVICES SECTOR": "NIFTY SERVICES SECTOR",
+    "NIFTY INDIA CONSUMPTION": "NIFTY INDIA CONSUMPTION",
+}
 
 
-def _format_nsepython_data(df):
-    """Standardizes the DataFrame from nsepython."""
-    df.rename(columns={'HistoricalDate': 'Date', 'OPEN': 'Open', 'HIGH': 'High', 'LOW': 'Low', 'CLOSE': 'Close'},
-              inplace=True)
-    df['Date'] = pd.to_datetime(df['Date'], format='mixed', dayfirst=True)
-    df['Volume'] = 0
-    return df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
+def _get_nse_session():
+    """Returns a cached session for the NSE charting API."""
+    global _NSE_SESSION
+    if _NSE_SESSION is None:
+        _NSE_SESSION = nse_api.create_session()
+    return _NSE_SESSION
 
 
-def _fetch_stock_historical_data_with_openchart(symbol, start_date, end_date, interval="1d"):
-    """Tries fetching from openchart """
+def _format_nse_chart_data(df):
+    """Standardizes the DataFrame from common_utils.nse_api."""
+    formatted_df = df.copy()
+    formatted_df.reset_index(inplace=True)
+    formatted_df.rename(
+        columns={
+            'Timestamp': 'timestamp',
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        },
+        inplace=True
+    )
+    formatted_df['timestamp'] = pd.to_datetime(formatted_df['timestamp']).dt.tz_localize(None)
+    return formatted_df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
+
+
+def _fetch_historical_data_with_nse_api(symbol, start_date, end_date, segment='EQ', interval='1d'):
+    """Fetches historical data for stock or index using common_utils.nse_api."""
     try:
-        logger.info(f"Attempting to fetch stock data for '{symbol}' using openchart.")
-        nse_instance = get_nse_data_instance()
-        start_datetime = dt.datetime.combine(start_date, dt.datetime.min.time())
-        end_datetime = dt.datetime.combine(end_date, dt.datetime.max.time())
+        logger.info(f"Attempting to fetch {segment} data for '{symbol}' using nse_api.")
+        session = _get_nse_session()
+        search_symbol = _INDEX_SYMBOL_MAPPING.get(symbol, symbol) if segment == 'IDX' else symbol
+        if search_symbol != symbol:
+            logger.info("Mapped index symbol '%s' to API search symbol '%s'.", symbol, search_symbol)
 
-        raw_data_oc = nse_instance.historical(symbol=symbol, segment='EQ', start=start_datetime, end=end_datetime, interval=interval)
-        if not raw_data_oc.empty:
-            logger.info("openchart fetch successful for stock.")
-            return _format_openchart_data(raw_data_oc)
-        logger.warning("openchart returned no data.")
-    except Exception as e_oc:
-        logger.error(f"openchart failed for stock '{symbol}': {e_oc}.")
+        search_results = nse_api.search_symbol(session, search_symbol, segment=segment)
 
-    return pd.DataFrame()
+        if search_results.empty:
+            logger.warning(f"No search results found for '{symbol}' in segment '{segment}'.")
+            return pd.DataFrame()
 
+        if segment == 'EQ':
+            symbol_upper = symbol.upper()
+            candidate_symbols = {symbol_upper, f"{symbol_upper}-EQ"}
+            exact_match = search_results[search_results['symbol'].str.upper().isin(candidate_symbols)]
+        else:
+            exact_match = search_results[search_results['symbol'].str.upper() == search_symbol.upper()]
 
-def _fetch_index_data_with_fallback(symbol, start_date, end_date):
-    """
-    Tries fetching from openchart first, using a dynamic symbol lookup.
-    Falls back to other libraries if the primary source fails.
-    """
-    # 1. Primary: openchart (Provides Volume)
-    try:
-        logger.info(f"Attempting to fetch data for '{symbol}' using openchart.")
-        nse_instance = get_nse_data_instance()
-
-        # --- UPDATED: Dynamic Symbol Lookup using search() method ---
-        api_symbol = symbol  # Default to the input symbol
-
-        # Symbol mapping for indices that need different names in the API
-        symbol_mapping = {"NIFTY100 LIQUID 15": "Nifty100 Liq 15",
-                          "NIFTY MIDCAP LIQUID 15": "Nifty Mid Liq 15",
-                          "NIFTY INDIA DIGITAL": "Nifty Ind Digital",
-                          "NIFTY SMALLCAP 250": "NIFTY SMLCAP 250",
-                          "NIFTY SMALLCAP 50": "NIFTY SMLCAP 50",
-                          "NIFTY SMALLCAP 100": "NIFTY SMLCAP 100",
-                          "NIFTY MIDSMALLCAP 400": "NIFTY MIDSML 400",
-                          "NIFTY MIDCAP SELECT": "NIFTY MID SELECT",
-                          "NIFTY LARGEMIDCAP 250": "NIFTY LARGEMID250",
-                          "NIFTY HEALTHCARE INDEX": "NIFTY HEALTHCARE",
-                          "NIFTY CONSUMER DURABLES": "NIFTY CONSR DURBL",
-                          "NIFTY FINANCIAL SERVICES": "Nifty Fin Service",
-                          "NIFTY PRIVATE BANK": "Nifty Pvt Bank",
-                          "NIFTY INFRASTRUCTURE": "Nifty Infra",
-                          "NIFTY SERVICES SECTOR": "Nifty Serv Sector",
-                          "NIFTY INDIA CONSUMPTION": "Nifty Consumption"
-                          }
-
-        try:
-            # Use search() method to find the symbol in IDX segment
-            search_symbol = symbol_mapping.get(symbol, symbol)
-            search_results = nse_instance.search(symbol=search_symbol, segment='IDX')
-            
-            if not search_results.empty:
-                # Find exact match or use first result
-                symbol_upper = search_symbol.upper()
-                exact_match = search_results[search_results['symbol'].str.upper() == symbol_upper]
-                
-                if not exact_match.empty:
-                    api_symbol = exact_match.iloc[0]['symbol']
-                    logger.info(f"Found matching API symbol for '{symbol}': '{api_symbol}'")
-                else:
-                    # Use first result if no exact match
-                    api_symbol = search_results.iloc[0]['symbol']
-                    logger.info(f"Using first search result for '{symbol}': '{api_symbol}'")
-            else:
-                logger.warning(f"Could not find a matching symbol for '{symbol}' in openchart search. Using original name.")
-        except Exception as lookup_error:
-            logger.error(f"Error during symbol lookup for '{symbol}': {lookup_error}. Using original name.")
-        # --- End of Updated Logic ---
+        row = exact_match.iloc[0] if not exact_match.empty else search_results.iloc[0]
 
         start_datetime = dt.datetime.combine(start_date, dt.datetime.min.time())
         end_datetime = dt.datetime.combine(end_date, dt.datetime.max.time())
-
-        # Updated: Use segment='IDX' for indices instead of exchange='NSE'
-        raw_data_oc = nse_instance.historical(
-            symbol=api_symbol,  # Use the looked-up symbol
-            segment='IDX',
+        historical_df = nse_api.fetch_historical(
+            session=session,
+            token=row['scripcode'],
+            symbol=row['symbol'],
+            instrument_type=row['instrumentType'],
             start=start_datetime,
             end=end_datetime,
-            interval='1d'
+            interval=interval
         )
-        if not raw_data_oc.empty:
-            logger.info("openchart fetch successful.")
-            return _format_openchart_data(raw_data_oc)
-        logger.warning("openchart returned no data. Trying fallback 1: nsepython.")
-    except Exception as e_oc:
-        logger.error(f"openchart failed: {e_oc}. Trying fallback 1: nsepython.")
+        if historical_df.empty:
+            logger.warning(f"nse_api returned no historical data for '{symbol}' ({segment}).")
+            return pd.DataFrame()
 
-    # 2. Fallback: nsepython
-    try:
-        logger.info(f"Attempting to fetch data for '{symbol}' using nsepython.")
-        raw_data_nse = index_history(symbol=symbol, start_date=start_date.strftime('%d-%m-%Y'),
-                                     end_date=end_date.strftime('%d-%m-%Y'))
-        if not raw_data_nse.empty:
-            logger.info("nsepython fetch successful.")
-            return _format_nsepython_data(raw_data_nse)
-        logger.warning("nsepython returned no data. Trying fallback 2: jugaad_data.")
-    except Exception as e_nse:
-        logger.error(f"nsepython failed: {e_nse}. Trying fallback 2: jugaad_data.")
-
-    return pd.DataFrame()
+        logger.info(f"nse_api fetch successful for '{symbol}' ({segment}).")
+        return _format_nse_chart_data(historical_df)
+    except Exception as exc:
+        logger.error(f"nse_api failed for '{symbol}' ({segment}): {exc}")
+        return pd.DataFrame()
 
 
-def load_index_sector_history(symbol, start_date_obj, end_date_obj, database='nsedata', data_source='openchart'):
-    """Performs a full historical data load for an NSE index or sector with multi-level fallback."""
+def load_index_sector_history(symbol, start_date_obj, end_date_obj, database='nsedata', data_source='nse_api'):
+    """Performs a full historical data load for an NSE index or sector using nse_api."""
     logger.info(f"Starting historical load for '{symbol}' from {start_date_obj} to {end_date_obj}.")
     table_name = symbol.replace(" ", "_").replace("-", "_")
 
-    formatted_data = _fetch_index_data_with_fallback(symbol, start_date_obj, end_date_obj)
+    if data_source and data_source != 'nse_api':
+        logger.warning("Ignoring unsupported data_source '%s'; using 'nse_api'.", data_source)
+
+    formatted_data = _fetch_historical_data_with_nse_api(
+        symbol=symbol,
+        start_date=start_date_obj,
+        end_date=end_date_obj,
+        segment='IDX',
+        interval='1d'
+    )
 
     # Drop duplicates based on the timestamp column
     formatted_data = formatted_data.drop_duplicates(subset=['timestamp'])
 
     if formatted_data.empty:
-        return "Failed to fetch data from all available sources."
+        return f"Failed to fetch data for {symbol} from all available sources."
 
     return load_sql_data(
         data_to_load=formatted_data, table_name=table_name, database=database,
@@ -420,7 +437,7 @@ def load_index_sector_history(symbol, start_date_obj, end_date_obj, database='ns
 
 
 def update_index_sector_daily(symbol, database='nsedata'):
-    """Performs an incremental daily update for an NSE index or sector with multi-level fallback."""
+    """Performs an incremental daily update for an NSE index or sector using nse_api."""
     table_name = symbol.replace(" ", "_").replace("-", "_")
     logger.info(f"Starting daily update for '{table_name}'.")
 
@@ -439,7 +456,13 @@ def update_index_sector_daily(symbol, database='nsedata'):
         if start_date_obj > end_date_obj:
             return f"Data for '{table_name}' is already up to date."
 
-        formatted_data = _fetch_index_data_with_fallback(symbol, start_date_obj, end_date_obj)
+        formatted_data = _fetch_historical_data_with_nse_api(
+            symbol=symbol,
+            start_date=start_date_obj,
+            end_date=end_date_obj,
+            segment='IDX',
+            interval='1d'
+        )
 
         if formatted_data.empty:
             return f"No new data to update for '{table_name}'."
@@ -459,10 +482,15 @@ def load_stock_history(symbol, start_date_obj, end_date_obj, database='nsedata',
     logger.info(f"Starting historical load for '{symbol}' from {start_date_obj} to {end_date_obj}.")
     table_name = symbol.replace(" ", "_").replace("-", "_")
 
-    formatted_data = _fetch_stock_historical_data_with_openchart(symbol, start_date_obj, end_date_obj,
-                                                     interval=interval)
+    formatted_data = _fetch_historical_data_with_nse_api(
+        symbol=symbol,
+        start_date=start_date_obj,
+        end_date=end_date_obj,
+        segment='EQ',
+        interval=interval
+    )
     if formatted_data.empty:
-        return "Failed to fetch data from all available sources."
+        return f"Failed to fetch data for {symbol} from all available sources."
 
     return load_sql_data(
         data_to_load=formatted_data, table_name=table_name, database=database,
@@ -485,7 +513,13 @@ def update_stock_daily(symbol, database='nsedata'):
         end_date_obj = dt.date.today()
         if start_date_obj > end_date_obj:
             return f"Data for '{table_name}' is already up to date."
-        formatted_data = _fetch_stock_historical_data_with_openchart(symbol, start_date_obj, end_date_obj)
+        formatted_data = _fetch_historical_data_with_nse_api(
+            symbol=symbol,
+            start_date=start_date_obj,
+            end_date=end_date_obj,
+            segment='EQ',
+            interval='1d'
+        )
         if formatted_data.empty:
             return f"No new data to update for '{table_name}'."
         return load_sql_data(data_to_load=formatted_data, table_name=table_name, database=database, load_type='append', index_required=False)
@@ -503,8 +537,8 @@ if __name__ == '__main__':
     # Load index data example
     start_date = dt.date(2020, 1, 1)
     end_date = dt.date.today()
-    # print(load_index_sector_history('NIFTY 50', start_date, end_date))
-    print(load_stock_history('TATAMOTORS', start_date, end_date))
+    print(load_index_sector_history('NIFTY FINANCIAL SERVICES', start_date, end_date))
+    # print(load_stock_history('TATAMOTORS', start_date, end_date))
 
     # Update index data example
     # print(update_index_sector_daily('NIFTY'))

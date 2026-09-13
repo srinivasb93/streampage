@@ -12,11 +12,7 @@ from functools import partial
 # Setup logging
 configure_logging()
 
-# Load configuration
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-# Default config if file not present
+# Indicator defaults (override via code or extend with env-driven config if needed)
 DEFAULT_CONFIG = {
     'Indicators': {
         'atr_period': '14',
@@ -37,8 +33,8 @@ DEFAULT_CONFIG = {
     }
 }
 
-if not config.sections():
-    config.read_dict(DEFAULT_CONFIG)
+config = configparser.ConfigParser()
+config.read_dict(DEFAULT_CONFIG)
 
 
 class TechnicalIndicators:

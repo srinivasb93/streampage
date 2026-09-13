@@ -8,18 +8,19 @@ from common_utils import read_write_sql_data as rd
 import time
 import seaborn as sns
 import matplotlib.pyplot as plt
-from dotenv import load_dotenv
+from common_utils.env_loader import load_environment
 import os
 import upstox_client
 import statsmodels.api as sm
 from common_utils import upstox_utils
+from common_utils import nse_api
 from common_utils.utils import fetch_indicies_sectors_list
 import datetime as dt
 from common_utils.auth import require_authentication
 from python_scripts.analysis.EOD_analysis import EODAnalysis
 
 # Load environment variables (for Upstox integration)
-load_dotenv()
+load_environment()
 UPSTOX_ACCESS_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN")
 
 st.set_page_config(layout="wide")
@@ -68,6 +69,8 @@ if "live_data" not in st.session_state:
 
 if "additional_chart_timeframes" not in st.session_state:
     st.session_state.additional_chart_timeframes = []
+if "additional_chart_context" not in st.session_state:
+    st.session_state.additional_chart_context = None
 
 if "eod_analysis_results" not in st.session_state:
     st.session_state.eod_analysis_results = {}
@@ -77,6 +80,8 @@ if "eod_analysis_status" not in st.session_state:
 
 
 SQL_TIMEFRAME_OPTIONS = [
+    ("Minutes", "minutes"),
+    ("Hours", "hours"),
     ("Daily", "Daily"),
     ("Weekly", "Weekly"),
     ("Monthly", "Monthly"),
@@ -111,10 +116,60 @@ def get_timeframe_value(label, options):
     return options[0][1]
 
 
+def get_default_additional_timeframes(primary_label, timeframe_labels):
+    preferred_map = {
+        "Daily": ["Weekly", "Monthly"],
+        "Minutes": ["Hours", "Daily"],
+        "Hours": ["Daily", "Weekly"],
+    }
+
+    defaults = []
+    preferred = preferred_map.get(primary_label, [])
+    for label in preferred:
+        if label in timeframe_labels and label != primary_label and label not in defaults:
+            defaults.append(label)
+
+    for label in timeframe_labels:
+        if label != primary_label and label not in defaults:
+            defaults.append(label)
+
+    return defaults
+
+
+def _build_timeframe_selector_context_key(data_src, primary_label):
+    return f"{str(data_src).strip().lower()}_{str(primary_label).strip().lower().replace(' ', '_')}"
+
+
 def sanitize_sql_symbol(symbol):
     return symbol.replace('-', '_').replace(' ', '_')
 
 EMPTY_OHLC_COLUMNS = ['open', 'high', 'low', 'close', 'volume', 'Price_Chg']
+_NSE_SESSION = None
+_INDEX_SYMBOL_MAPPING = {
+    "NIFTY100 LIQUID 15": "NIFTY100 LIQUID 15",
+    "NIFTY MIDCAP LIQUID 15": "NIFTY MIDCAP LIQUID 15",
+    "NIFTY INDIA DIGITAL": "NIFTY INDIA DIGITAL",
+    "NIFTY SMALLCAP 250": "NIFTY SMLCAP 250",
+    "NIFTY SMALLCAP 50": "NIFTY SMLCAP 50",
+    "NIFTY SMALLCAP 100": "NIFTY SMLCAP 100",
+    "NIFTY MIDSMALLCAP 400": "NIFTY MIDSML 400",
+    "NIFTY MIDCAP SELECT": "NIFTY MID SELECT",
+    "NIFTY LARGEMIDCAP 250": "NIFTY LARGEMID250",
+    "NIFTY HEALTHCARE INDEX": "NIFTY HEALTHCARE",
+    "NIFTY CONSUMER DURABLES": "NIFTY CONSR DURBL",
+    "NIFTY FINANCIAL SERVICES": "NIFTY FIN SERVICE",
+    "NIFTY PRIVATE BANK": "NIFTY PRIVATE BANK",
+    "NIFTY INFRASTRUCTURE": "NIFTY INFRASTRUCTURE",
+    "NIFTY SERVICES SECTOR": "NIFTY SERVICES SECTOR",
+    "NIFTY INDIA CONSUMPTION": "NIFTY INDIA CONSUMPTION",
+}
+
+
+def _get_nse_session():
+    global _NSE_SESSION
+    if _NSE_SESSION is None:
+        _NSE_SESSION = nse_api.create_session()
+    return _NSE_SESSION
 
 
 def build_eod_signal_summary(latest_row: pd.Series) -> list[str]:
@@ -134,6 +189,34 @@ def build_eod_signal_summary(latest_row: pd.Series) -> list[str]:
     stop_loss_hunt = cleaned('Stop_Loss_Hunt')
     if stop_loss_hunt:
         summary_lines.append(f"Stop-loss hunt pattern detected ({stop_loss_hunt}).")
+
+    signal_conf = cleaned('Signal_Confidence')
+    if isinstance(signal_conf, (int, float)) and not pd.isna(signal_conf):
+        conf_bucket = cleaned('Signal_Confidence_Bucket')
+        trade_bias = cleaned('Trade_Bias')
+        extra = []
+        if conf_bucket:
+            extra.append(f"bucket: {conf_bucket}")
+        if trade_bias:
+            extra.append(f"bias: {trade_bias}")
+        suffix = f" ({', '.join(extra)})" if extra else ""
+        summary_lines.append(f"Signal confidence: {signal_conf:.1f}/100{suffix}.")
+
+    trend_label = cleaned('Trend_Label')
+    if trend_label:
+        summary_lines.append(f"Trend regime: {trend_label}.")
+
+    vol_regime = cleaned('Volatility_Regime')
+    if vol_regime:
+        summary_lines.append(f"Volatility regime: {vol_regime}.")
+
+    volume_regime = cleaned('Volume_Regime')
+    if volume_regime:
+        summary_lines.append(f"Volume regime: {volume_regime}.")
+
+    rs_score = cleaned('Relative_Strength_Score')
+    if isinstance(rs_score, (int, float)) and not pd.isna(rs_score):
+        summary_lines.append(f"Relative strength score (20/60/120D weighted): {rs_score:.2f}.")
 
     divergence = cleaned('RSI_Divergence')
     if divergence:
@@ -178,14 +261,246 @@ def build_eod_signal_summary(latest_row: pd.Series) -> list[str]:
     return summary_lines
 
 
-def load_openchart_stock_data(symbol, unit, interval='1'):
-    interval_data = upstox_utils.get_openchart_history(symbol, unit=unit, interval=interval)
-    if not isinstance(interval_data, pd.DataFrame) or interval_data.empty:
+def compute_enhanced_rsi_divergence(
+    data: pd.DataFrame,
+    pivot_lookback: int = 3,
+    window_lookback: int = 5,
+    min_price_change_pct: float = 0.35,
+    min_rsi_delta: float = 1.0,
+    max_pivot_back: int = 8,
+    rsi_align_tolerance_bars: int = 2,
+    signal_cooldown_bars: int = 5
+) -> pd.Series:
+    if data is None or data.empty:
+        return pd.Series(dtype="object")
+    req_cols = {'high', 'low', 'close', 'RSI_14'}
+    if not req_cols.issubset(data.columns):
+        return pd.Series([''] * len(data), index=data.index, dtype="object")
+
+    out = [''] * len(data)
+    highs = pd.to_numeric(data['high'], errors='coerce').to_numpy(float)
+    lows = pd.to_numeric(data['low'], errors='coerce').to_numpy(float)
+    rsi = pd.to_numeric(data['RSI_14'], errors='coerce').to_numpy(float)
+    min_pivot_separation = max(2, pivot_lookback)
+
+    def _is_unique_extreme(arr: np.ndarray, pos: int, lb: int, mode: str) -> bool:
+        window = arr[pos - lb: pos + lb + 1]
+        val = arr[pos]
+        if not np.isfinite(val):
+            return False
+        if mode == 'high':
+            if val != np.nanmax(window):
+                return False
+        else:
+            if val != np.nanmin(window):
+                return False
+        return np.sum(np.isclose(window, val, equal_nan=False)) == 1
+
+    price_high_pivots = []
+    price_low_pivots = []
+    rsi_high_pivots = []
+    rsi_low_pivots = []
+    for pos in range(pivot_lookback, len(data) - pivot_lookback):
+        price_hi = _is_unique_extreme(highs, pos, pivot_lookback, 'high')
+        price_lo = _is_unique_extreme(lows, pos, pivot_lookback, 'low')
+        rsi_hi = _is_unique_extreme(rsi, pos, pivot_lookback, 'high')
+        rsi_lo = _is_unique_extreme(rsi, pos, pivot_lookback, 'low')
+        if price_hi:
+            price_high_pivots.append(pos)
+        if price_lo:
+            price_low_pivots.append(pos)
+        if rsi_hi:
+            rsi_high_pivots.append(pos)
+        if rsi_lo:
+            rsi_low_pivots.append(pos)
+
+    def _compress_pivots(pivots: list[int], arr: np.ndarray, mode: str) -> list[int]:
+        if not pivots:
+            return []
+        compressed = [pivots[0]]
+        for pos in pivots[1:]:
+            prev = compressed[-1]
+            if pos - prev < min_pivot_separation:
+                if mode == 'high' and arr[pos] > arr[prev]:
+                    compressed[-1] = pos
+                elif mode == 'low' and arr[pos] < arr[prev]:
+                    compressed[-1] = pos
+            else:
+                compressed.append(pos)
+        return compressed
+
+    price_high_pivots = _compress_pivots(price_high_pivots, highs, 'high')
+    price_low_pivots = _compress_pivots(price_low_pivots, lows, 'low')
+    rsi_high_pivots = _compress_pivots(rsi_high_pivots, rsi, 'high')
+    rsi_low_pivots = _compress_pivots(rsi_low_pivots, rsi, 'low')
+
+    def _nearest_rsi_pivot(price_pivot_pos: int, rsi_pivots: list[int]) -> int | None:
+        candidates = [p for p in rsi_pivots if abs(p - price_pivot_pos) <= rsi_align_tolerance_bars]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda p: abs(p - price_pivot_pos))
+
+    # Core pivots: price pivot must have a nearby RSI pivot (asynchronous alignment allowed).
+    core_lows = []
+    for pos in price_low_pivots:
+        rsi_pos = _nearest_rsi_pivot(pos, rsi_low_pivots)
+        if rsi_pos is not None:
+            core_lows.append((pos, rsi_pos))
+
+    core_highs = []
+    for pos in price_high_pivots:
+        rsi_pos = _nearest_rsi_pivot(pos, rsi_high_pivots)
+        if rsi_pos is not None:
+            core_highs.append((pos, rsi_pos))
+
+    # Compare against prior core anchor pivots (not just consecutive), which keeps structure strict
+    # while allowing meaningful divergences when intermediate pivots appear between anchor and current.
+    for idx in range(1, len(core_lows)):
+        curr_price, curr_rsi_pos = core_lows[idx]
+        prev_candidates = core_lows[max(0, idx - max_pivot_back):idx]
+        if not prev_candidates or not np.isfinite(rsi[curr_rsi_pos]):
+            continue
+        anchor_price, anchor_rsi_pos = min(
+            prev_candidates,
+            key=lambda x: rsi[x[1]] if np.isfinite(rsi[x[1]]) else np.inf
+        )
+        if not np.isfinite(rsi[anchor_rsi_pos]):
+            continue
+        price_drop_pct = ((lows[anchor_price] - lows[curr_price]) / lows[anchor_price]) * 100 if lows[anchor_price] else 0
+        if price_drop_pct >= min_price_change_pct and (rsi[curr_rsi_pos] - rsi[anchor_rsi_pos]) >= min_rsi_delta:
+            out[curr_price] = 'Bullish' if not out[curr_price] else f"{out[curr_price]};Bullish"
+
+    for idx in range(1, len(core_highs)):
+        curr_price, curr_rsi_pos = core_highs[idx]
+        prev_candidates = core_highs[max(0, idx - max_pivot_back):idx]
+        if not prev_candidates or not np.isfinite(rsi[curr_rsi_pos]):
+            continue
+        anchor_price, anchor_rsi_pos = max(
+            prev_candidates,
+            key=lambda x: rsi[x[1]] if np.isfinite(rsi[x[1]]) else -np.inf
+        )
+        if not np.isfinite(rsi[anchor_rsi_pos]):
+            continue
+        price_rise_pct = ((highs[curr_price] - highs[anchor_price]) / highs[anchor_price]) * 100 if highs[anchor_price] else 0
+        if price_rise_pct >= min_price_change_pct and (rsi[anchor_rsi_pos] - rsi[curr_rsi_pos]) >= min_rsi_delta:
+            out[curr_price] = 'Bearish' if not out[curr_price] else f"{out[curr_price]};Bearish"
+
+    # Cooldown: keep first signal and suppress same-direction repeats for N bars.
+    if signal_cooldown_bars > 0:
+        cooled = out.copy()
+        last_bull = -10_000
+        last_bear = -10_000
+        for i, sig in enumerate(out):
+            if not sig:
+                continue
+            tags = [t for t in sig.split(';') if t]
+            keep_tags = []
+            for tag in tags:
+                if tag == 'Bullish':
+                    if (i - last_bull) >= signal_cooldown_bars:
+                        keep_tags.append(tag)
+                        last_bull = i
+                elif tag == 'Bearish':
+                    if (i - last_bear) >= signal_cooldown_bars:
+                        keep_tags.append(tag)
+                        last_bear = i
+            cooled[i] = ';'.join(keep_tags)
+        out = cooled
+
+    return pd.Series(out, index=data.index, dtype='object')
+
+
+def normalize_summary_to_daily(data: pd.DataFrame) -> pd.DataFrame:
+    if data is None or data.empty or 'timestamp' not in data.columns:
+        return data
+    out = data.copy()
+    out['timestamp'] = pd.to_datetime(out['timestamp'], errors='coerce')
+    out = out.dropna(subset=['timestamp']).sort_values('timestamp')
+    out['trade_date'] = out['timestamp'].dt.date
+    out = out.drop_duplicates(subset=['trade_date'], keep='last').drop(columns=['trade_date'])
+    return out
+
+
+def _map_unit_interval_to_nse(unit, interval='1'):
+    unit_val = str(unit).strip().lower()
+    interval_val = str(interval).strip()
+    interval_int = int(interval_val) if interval_val.isdigit() else 1
+
+    if unit_val in ['minute', 'minutes']:
+        if interval_int in [1, 3, 5, 10, 15, 30]:
+            return f"{interval_int}m", 10
+        if interval_int == 60:
+            return "1h", 30
+        return "1m", 10
+    if unit_val in ['hour', 'hours']:
+        return "1h", 30
+    if unit_val in ['day', 'days', 'daily']:
+        return "1d", 3650
+    if unit_val in ['week', 'weeks', 'weekly']:
+        return "1w", 3650
+    if unit_val in ['month', 'months', 'monthly']:
+        return "1M", 7300
+    return "1d", 3650
+
+
+def _fetch_nse_data_by_segment(session, symbol, interval_key, days, segment):
+    query_symbol = symbol.replace('_', ' ').strip()
+    if segment == 'IDX':
+        query_symbol = _INDEX_SYMBOL_MAPPING.get(query_symbol.upper(), query_symbol)
+
+    search_results = nse_api.search_symbol(session, query_symbol, segment=segment)
+    if search_results.empty:
         return pd.DataFrame()
-    interval_data = interval_data.copy()
-    interval_data['timestamp'] = pd.to_datetime(interval_data['timestamp'])
-    interval_data.sort_values('timestamp', inplace=True)
-    return interval_data[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+
+    if segment == 'EQ':
+        base_symbol = symbol.replace('_', ' ').strip().upper()
+        eq_candidates = {base_symbol, f"{base_symbol}-EQ"}
+        exact_match = search_results[search_results['symbol'].str.upper().isin(eq_candidates)]
+    else:
+        exact_match = search_results[search_results['symbol'].str.upper() == query_symbol.upper()]
+
+    row = exact_match.iloc[0] if not exact_match.empty else search_results.iloc[0]
+
+    end_dt = dt.datetime.now()
+    start_dt = end_dt - dt.timedelta(days=days)
+    raw_df = nse_api.fetch_historical(
+        session=session,
+        token=row['scripcode'],
+        symbol=row['symbol'],
+        instrument_type=row['instrumentType'],
+        start=start_dt,
+        end=end_dt,
+        interval=interval_key
+    )
+    if raw_df.empty:
+        return pd.DataFrame()
+
+    formatted_df = raw_df.copy().reset_index()
+    formatted_df.rename(
+        columns={
+            'Timestamp': 'timestamp',
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        },
+        inplace=True
+    )
+    formatted_df['timestamp'] = pd.to_datetime(formatted_df['timestamp']).dt.tz_localize(None)
+    formatted_df.sort_values('timestamp', inplace=True)
+    return formatted_df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+
+
+def load_nse_api_stock_data(symbol, unit, interval='1'):
+    interval_key, days = _map_unit_interval_to_nse(unit=unit, interval=interval)
+    session = _get_nse_session()
+
+    eq_df = _fetch_nse_data_by_segment(session, symbol, interval_key, days, segment='EQ')
+    if not eq_df.empty:
+        return eq_df
+
+    return _fetch_nse_data_by_segment(session, symbol, interval_key, days, segment='IDX')
 
 
 # Data Extraction
@@ -205,14 +520,14 @@ def extract_stock_data(stock_name, data_source='SQL', period='Daily', interval='
         else:
             period_map = {"minutes": "Minutes", "hours": "Hours", "days": "Daily", "weeks": "Weekly", "months": "Monthly"}
             period = period_map.get(period, "Daily")
-            df = load_openchart_stock_data(stock_name, period, interval)
+            df = load_nse_api_stock_data(stock_name, period, interval)
 
         if isinstance(df, pd.DataFrame) and not df.empty and 'timestamp' in df.columns:
             df = df.copy()
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df.set_index('timestamp', inplace=True)
         else:
-            df = load_openchart_stock_data(stock_name, period, interval)
+            df = load_nse_api_stock_data(stock_name, period, interval)
 
     elif data_source == 'Upstox':
         try:
@@ -247,10 +562,10 @@ def extract_stock_data(stock_name, data_source='SQL', period='Daily', interval='
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df.set_index('timestamp', inplace=True)
         else:
-            df = load_openchart_stock_data(stock_name, period, interval)
+            df = load_nse_api_stock_data(stock_name, period, interval)
 
     else:
-        df = load_openchart_stock_data(stock_name, period, interval)
+        df = load_nse_api_stock_data(stock_name, period, interval)
 
     if not isinstance(df, pd.DataFrame) or df.empty:
         return pd.DataFrame(columns=EMPTY_OHLC_COLUMNS)
@@ -263,7 +578,7 @@ def extract_stock_data(stock_name, data_source='SQL', period='Daily', interval='
     if 'volume' not in df.columns:
         df['volume'] = 0
     if 'close' in df.columns:
-        df['Price_Chg'] = (df['close'].pct_change() * 100).round(1)
+        df['Price_Chg'] = (df['close'].pct_change(fill_method=None) * 100).round(1)
     else:
         df['Price_Chg'] = pd.NA
     return df
@@ -284,7 +599,7 @@ def get_stocks_index_data(data_type='Stock'):
 
 # Technical Indicators and Calculations
 def calculate_monthly_returns(data):
-    data['Monthly Return'] = data['close'].pct_change().dropna()
+    data['Monthly Return'] = data['close'].pct_change(fill_method=None).dropna()
     data['Year'] = data.index.year
     data['Month'] = data.index.month
     return data.pivot_table(index='Year', columns='Month', values='Monthly Return')
@@ -299,7 +614,7 @@ def slope(ser, n):
         x_scaled = sm.add_constant(x[i - n:i])
         model = sm.OLS(y_scaled, x_scaled)
         results = model.fit()
-        slopes.append(results.params[-1])
+        slopes.append(results.params.iloc[-1])
         reg_prices.append(model.predict(results.params)[-1])
     return reg_prices
 
@@ -558,22 +873,35 @@ def stock_analysis():
         default_primary_label = 'Daily' if 'Daily' in timeframe_labels else timeframe_labels[0]
         primary_label = st.selectbox("Primary Timeframe", timeframe_labels, index=timeframe_labels.index(default_primary_label))
         primary_value = get_timeframe_value(primary_label, timeframe_options)
+        if primary_label in ["Minutes"]:
+            interval = st.selectbox("Interval", ["1", "3", "5", "10", "15", "30", "60"])
+        else:
+            interval = "1"
 
         if data_src == 'SQL':
-            df = extract_stock_data(stock_name, data_source='SQL', period=primary_value, interval='1')
+            df = extract_stock_data(stock_name, data_source='SQL', period=primary_value, interval=interval)
         else:
-            df = extract_stock_data(stock_name, data_source='Upstox', period=primary_value, interval='1')
+            df = extract_stock_data(stock_name, data_source='Upstox', period=primary_value, interval=interval)
 
         if df.empty:
             st.warning("No data available for the selected source/timeframe.")
             st.stop()
 
         max_additional = max(0, len(timeframe_labels) - 1)
+        chart_context = (data_src, primary_label)
+        selector_context_key = _build_timeframe_selector_context_key(data_src, primary_label)
+        context_changed = st.session_state.additional_chart_context != chart_context
+        if context_changed:
+            st.session_state.additional_chart_timeframes = []
+            for selector_idx in range(max_additional):
+                st.session_state.pop(f"additional_timeframe_selector_{selector_idx}", None)
+        st.session_state.additional_chart_context = chart_context
+
         previous_count = min(len(st.session_state.additional_chart_timeframes), max_additional)
         default_extra = previous_count if previous_count else min(2, max_additional)
         additional_chart_count = st.slider("Additional Charts", 0, max_additional, default_extra, help="Add parallel charts with independent timeframes.") if max_additional > 0 else 0
         current_configs = st.session_state.additional_chart_timeframes[:additional_chart_count]
-        available_defaults = [label for label in timeframe_labels if label != primary_label] or timeframe_labels
+        available_defaults = get_default_additional_timeframes(primary_label, timeframe_labels)
         idx = 0
         while len(current_configs) < additional_chart_count:
             current_configs.append(available_defaults[idx % len(available_defaults)])
@@ -723,13 +1051,13 @@ def stock_analysis():
             for idx, label in enumerate(st.session_state.additional_chart_timeframes):
                 st.divider()
                 selector_cols = st.columns([0.7, 0.3])
-                
+
                 with selector_cols[1]:
                     selected_label = st.selectbox(
                         "Timeframe",
                         timeframe_labels,
                         index=timeframe_labels.index(label),
-                        key=f"additional_timeframe_selector_{idx}"
+                        key=f"additional_timeframe_selector_{idx}_{selector_context_key}"
                     )
 
                 with selector_cols[0]:
@@ -989,20 +1317,32 @@ def stock_analysis():
                 with analysis_cols[2]:
                     st.subheader("Momentum Divergence")
                     div_period = st.number_input("Divergence Period", value=14, min_value=5)
-                    recent_data = df.iloc[-div_period * 2:].copy()
+                    recent_data = df.iloc[-div_period * 4:].copy().reset_index()
+                    if 'timestamp' not in recent_data.columns:
+                        recent_data.rename(columns={recent_data.columns[0]: 'timestamp'}, inplace=True)
+                    recent_data['timestamp'] = pd.to_datetime(recent_data['timestamp'], errors='coerce')
                     recent_data['RSI_14'] = ta.rsi(recent_data["close"], length=14)
-                    price_highs = argrelextrema(recent_data["close"].values, np.greater, order=5)[0]
-                    price_lows = argrelextrema(recent_data["close"].values, np.less, order=5)[0]
-                    rsi_highs = argrelextrema(recent_data["RSI_14"].values, np.greater, order=5)[0]
-                    rsi_lows = argrelextrema(recent_data["RSI_14"].values, np.less, order=5)[0]
-                    if len(price_highs) > 1 and len(rsi_highs) > 1:
-                        if recent_data["close"].iloc[price_highs[-1]] > recent_data["close"].iloc[price_highs[-2]] and \
-                                recent_data["RSI_14"].iloc[rsi_highs[-1]] < recent_data["RSI_14"].iloc[rsi_highs[-2]]:
-                            st.markdown("- **Bearish RSI Divergence**: higher price, lower RSI")
-                    if len(price_lows) > 1 and len(rsi_lows) > 1:
-                        if recent_data["close"].iloc[price_lows[-1]] < recent_data["close"].iloc[price_lows[-2]] and \
-                                recent_data["RSI_14"].iloc[rsi_lows[-1]] > recent_data["RSI_14"].iloc[rsi_lows[-2]]:
-                            st.markdown("- **Bullish RSI Divergence**: lower price, higher RSI")
+                    recent_data['RSI_Divergence_Enhanced'] = compute_enhanced_rsi_divergence(
+                        recent_data[['timestamp', 'high', 'low', 'close', 'RSI_14']].copy()
+                    )
+                    div_hits = recent_data[recent_data['RSI_Divergence_Enhanced'] != ''].copy()
+                    if div_hits.empty:
+                        st.markdown("- No RSI divergence detected in current lookback.")
+                    else:
+                        latest_hit = div_hits.iloc[-1]
+                        hit_date = latest_hit['timestamp'].date() if pd.notna(latest_hit['timestamp']) else "NA"
+                        st.markdown(
+                            f"- Latest divergence: **{latest_hit['RSI_Divergence_Enhanced']}** on **{hit_date}** "
+                            f"(Close: {latest_hit['close']:.2f}, RSI: {latest_hit['RSI_14']:.1f})"
+                        )
+                        with st.expander("Recent RSI Divergence Signals"):
+                            st.dataframe(
+                                div_hits[['timestamp', 'close', 'RSI_14', 'RSI_Divergence_Enhanced']]
+                                .sort_values('timestamp', ascending=False)
+                                .head(10),
+                                hide_index=True,
+                                width='stretch'
+                            )
 
                 st.subheader("Position Sizing")
                 account_size = st.number_input("Account Size (₹)", value=20000.0, min_value=1000.0)
@@ -1074,6 +1414,18 @@ def stock_analysis():
                                 analysis_days=int(eod_days)
                             )
                             eod_df = eod_runner.process_stock_data(sanitized_symbol).copy()
+                            eod_df = normalize_summary_to_daily(eod_df)
+                            if 'RSI_14' not in eod_df.columns:
+                                eod_df['RSI_14'] = ta.rsi(eod_df["close"], length=14)
+                            eod_df['RSI_Divergence_Legacy'] = eod_df.get('RSI_Divergence', '').fillna('')
+                            eod_df['RSI_Divergence_Enhanced'] = compute_enhanced_rsi_divergence(
+                                eod_df[['timestamp', 'high', 'low', 'close', 'RSI_14']].copy()
+                            )
+                            eod_df['RSI_Divergence'] = np.where(
+                                eod_df['RSI_Divergence_Enhanced'] != '',
+                                eod_df['RSI_Divergence_Enhanced'],
+                                eod_df['RSI_Divergence_Legacy']
+                            )
                             eod_df['Display_Symbol'] = stock_name
                             load_msg = rd.load_sql_data(
                                 data_to_load=eod_df,
@@ -1095,8 +1447,38 @@ def stock_analysis():
                     st.markdown(f"**Target Table:** `public.\"{table_name}\"`")
                     st.markdown(f"**Last Operation:** {status_msg}")
 
+                load_existing = st.button(
+                    "Load Existing Summary Table",
+                    key=f"load_existing_{sanitized_symbol}"
+                )
+                if load_existing:
+                    existing_df = rd.get_table_data(
+                        selected_database='nsedata',
+                        selected_table=table_name,
+                        sort=True,
+                        sort_by='timestamp',
+                        sort_order='ASC'
+                    )
+                    if existing_df.empty:
+                        st.warning(f"No data found in table {table_name}.")
+                    else:
+                        st.session_state.eod_analysis_results[sanitized_symbol] = existing_df
+                        st.success(f"Loaded {len(existing_df)} rows from {table_name}.")
+
                 if sanitized_symbol in st.session_state.eod_analysis_results:
-                    result_df = st.session_state.eod_analysis_results[sanitized_symbol]
+                    result_df = normalize_summary_to_daily(st.session_state.eod_analysis_results[sanitized_symbol].copy())
+                    if 'RSI_14' not in result_df.columns:
+                        result_df['RSI_14'] = ta.rsi(result_df["close"], length=14)
+                    result_df['RSI_Divergence_Enhanced'] = compute_enhanced_rsi_divergence(
+                        result_df[['timestamp', 'high', 'low', 'close', 'RSI_14']].copy()
+                    )
+                    if 'RSI_Divergence' not in result_df.columns:
+                        result_df['RSI_Divergence'] = ''
+                    stored_div = result_df['RSI_Divergence'].fillna('').astype(str).str.strip()
+                    enhanced_div = result_df['RSI_Divergence_Enhanced'].fillna('').astype(str).str.strip()
+                    mismatch_mask = (stored_div != enhanced_div) & ((stored_div != '') | (enhanced_div != ''))
+                    mismatch_df = result_df.loc[mismatch_mask, ['timestamp', 'close', 'RSI_14', 'RSI_Divergence', 'RSI_Divergence_Enhanced']]
+
                     if not result_df.empty and 'timestamp' in result_df.columns:
                         latest_row = result_df.sort_values('timestamp').iloc[-1]
                         latest_ts = latest_row['timestamp']
@@ -1108,6 +1490,23 @@ def stock_analysis():
                                 st.markdown(f"- {line}")
                         else:
                             st.info("No standout signals detected for the latest session.")
+
+                    st.subheader("RSI Divergence Audit (Stored vs Enhanced)")
+                    check_dates = pd.to_datetime(['2025-03-03', '2025-04-23', '2025-07-01'])
+                    spotlight = result_df[result_df['timestamp'].dt.normalize().isin(check_dates)][
+                        ['timestamp', 'close', 'RSI_14', 'RSI_Divergence', 'RSI_Divergence_Enhanced']
+                    ].copy()
+                    if not spotlight.empty:
+                        st.dataframe(spotlight.sort_values('timestamp'), hide_index=True, width='stretch')
+                    if mismatch_df.empty:
+                        st.caption("No mismatch between stored and enhanced RSI divergence for non-empty signal rows.")
+                    else:
+                        st.caption(f"Mismatches found: {len(mismatch_df)} rows")
+                        st.dataframe(
+                            mismatch_df.sort_values('timestamp', ascending=False).head(30),
+                            hide_index=True,
+                            width='stretch'
+                        )
 
                     st.dataframe(
                         result_df.sort_values('timestamp', ascending=False).head(200),

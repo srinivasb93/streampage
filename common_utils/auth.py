@@ -6,8 +6,30 @@ Uses Streamlit's built-in session state for reliable authentication.
 import streamlit as st
 import logging
 import bcrypt
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, InvalidHashError
 
 logger = logging.getLogger(__name__)
+_argon2 = PasswordHasher()
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    """Verify a password against bcrypt or Argon2 hashes stored in the database."""
+    if stored_hash.startswith("$argon2"):
+        try:
+            _argon2.verify(stored_hash, password)
+            return True
+        except VerifyMismatchError:
+            return False
+        except InvalidHashError:
+            logger.error("Authentication error: invalid Argon2 hash format")
+            return False
+
+    if stored_hash.startswith("$2"):
+        return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+
+    logger.error("Authentication error: unsupported password hash format")
+    return False
 
 
 def check_credentials(email, password):
@@ -36,8 +58,7 @@ def check_credentials(email, password):
         user_data = result_df.iloc[0]
         stored_hash = user_data['hashed_password']
         
-        # Verify password using bcrypt
-        if bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
+        if _verify_password(password, stored_hash):
             logger.info(f"Authentication successful for user: {email}")
             return {
                 'user_id': user_data['user_id'],

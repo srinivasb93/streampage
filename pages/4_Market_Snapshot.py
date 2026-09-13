@@ -48,6 +48,138 @@ def display_data_as_per_asset_type(asset_snapshot, subset_cols=[]):
         st.write("No data available for display")
 
 
+def build_ranked_screener(eod_df, top_n=10):
+    if eod_df is None or eod_df.empty:
+        return pd.DataFrame(), pd.DataFrame(), None
+
+    if 'timestamp' not in eod_df.columns or 'Symbol' not in eod_df.columns:
+        return pd.DataFrame(), pd.DataFrame(), "Missing required columns: timestamp/Symbol"
+
+    ranked_df = eod_df.copy()
+    ranked_df['timestamp'] = pd.to_datetime(ranked_df['timestamp'], errors='coerce')
+    ranked_df = ranked_df.dropna(subset=['timestamp'])
+    if ranked_df.empty:
+        return pd.DataFrame(), pd.DataFrame(), "No valid timestamp data found"
+
+    ranked_df = ranked_df.sort_values(['Symbol', 'timestamp']).groupby('Symbol', as_index=False).tail(1)
+    ranked_df['Signal_Confidence'] = pd.to_numeric(ranked_df.get('Signal_Confidence'), errors='coerce')
+    ranked_df['Relative_Strength_Score'] = pd.to_numeric(ranked_df.get('Relative_Strength_Score'), errors='coerce')
+    ranked_df['Momentum_Score'] = pd.to_numeric(ranked_df.get('Momentum_Score'), errors='coerce')
+    ranked_df['Pct_Chg'] = pd.to_numeric(ranked_df.get('Pct_Chg'), errors='coerce')
+    ranked_df['close'] = pd.to_numeric(ranked_df.get('close'), errors='coerce')
+
+    if ranked_df['Signal_Confidence'].isna().all():
+        return pd.DataFrame(), pd.DataFrame(), (
+            "Signal_Confidence data not found in EOD_Summary. "
+            "Run latest EOD analysis to populate ranked screener columns."
+        )
+
+    trade_bias = ranked_df.get('Trade_Bias', pd.Series('', index=ranked_df.index)).fillna('')
+    trend_label = ranked_df.get('Trend_Label', pd.Series('', index=ranked_df.index)).fillna('')
+
+    long_mask = (
+        (ranked_df['Signal_Confidence'] >= 65)
+        | trade_bias.str.contains('Long', case=False, na=False)
+    )
+    short_mask = (
+        (ranked_df['Signal_Confidence'] <= 35)
+        | trade_bias.str.contains('Short', case=False, na=False)
+    )
+
+    longs = ranked_df[long_mask].copy()
+    shorts = ranked_df[short_mask].copy()
+
+    long_align = trend_label.str.contains('Bullish', case=False, na=False)
+    short_align = trend_label.str.contains('Bearish', case=False, na=False)
+
+    if not longs.empty:
+        longs['Trend_Align'] = np.where(long_align.loc[longs.index], 1, 0)
+        longs = longs.sort_values(
+            ['Signal_Confidence', 'Trend_Align', 'Relative_Strength_Score', 'Momentum_Score'],
+            ascending=[False, False, False, False]
+        ).head(top_n)
+    if not shorts.empty:
+        shorts['Trend_Align'] = np.where(short_align.loc[shorts.index], 1, 0)
+        shorts = shorts.sort_values(
+            ['Signal_Confidence', 'Trend_Align', 'Relative_Strength_Score', 'Momentum_Score'],
+            ascending=[True, False, True, True]
+        ).head(top_n)
+
+    display_cols = [
+        'timestamp', 'Symbol', 'close', 'Pct_Chg', 'Signal_Confidence', 'Signal_Confidence_Bucket',
+        'Trade_Bias', 'Trend_Label', 'Relative_Strength_Score', 'Momentum_Score',
+        'Volatility_Regime', 'Volume_Regime'
+    ]
+    keep_cols = [c for c in display_cols if c in ranked_df.columns]
+    return longs[keep_cols], shorts[keep_cols], None
+
+
+def add_trade_plan_columns(df, direction, position_value=20000, risk_per_trade=450):
+    if df is None or df.empty:
+        return df
+
+    plan_df = df.copy()
+    numeric_cols = ['close', 'high', 'low', 'EMA_20', 'ATR', 'Curr_Supp', 'Curr_Res']
+    for col in numeric_cols:
+        if col in plan_df.columns:
+            plan_df[col] = pd.to_numeric(plan_df[col], errors='coerce')
+
+    if 'ATR' not in plan_df.columns:
+        plan_df['ATR'] = np.nan
+    atr_buffer = plan_df['ATR'].fillna(0) * 0.5
+
+    if direction == 'long':
+        breakout_level = plan_df['Curr_Res'].where(plan_df.get('Curr_Res', pd.Series(index=plan_df.index)).gt(0), plan_df['high'])
+        pullback_level = plan_df['EMA_20'].fillna(plan_df['close'])
+        plan_df['Entry_Price'] = np.where(
+            plan_df['close'] <= pullback_level * 1.01,
+            pullback_level,
+            np.maximum(plan_df['close'], breakout_level.fillna(plan_df['close']))
+        )
+
+        sl_candidates = pd.concat(
+            [
+                plan_df.get('Curr_Supp', pd.Series(np.nan, index=plan_df.index)).replace(0, np.nan),
+                plan_df.get('EMA_20', pd.Series(np.nan, index=plan_df.index)),
+                plan_df.get('low', pd.Series(np.nan, index=plan_df.index))
+            ],
+            axis=1
+        )
+        plan_df['Stop_Loss'] = sl_candidates.min(axis=1, skipna=True) - atr_buffer
+        plan_df['Risk_per_Share'] = (plan_df['Entry_Price'] - plan_df['Stop_Loss']).clip(lower=0)
+        plan_df['Target_1'] = plan_df['Entry_Price'] + plan_df['Risk_per_Share']
+        plan_df['Target_2'] = plan_df['Entry_Price'] + (2 * plan_df['Risk_per_Share'])
+    else:
+        breakdown_level = plan_df['Curr_Supp'].where(plan_df.get('Curr_Supp', pd.Series(index=plan_df.index)).gt(0), plan_df['low'])
+        pullback_level = plan_df['EMA_20'].fillna(plan_df['close'])
+        plan_df['Entry_Price'] = np.where(
+            plan_df['close'] >= pullback_level * 0.99,
+            pullback_level,
+            np.minimum(plan_df['close'], breakdown_level.fillna(plan_df['close']))
+        )
+
+        sl_candidates = pd.concat(
+            [
+                plan_df.get('Curr_Res', pd.Series(np.nan, index=plan_df.index)).replace(0, np.nan),
+                plan_df.get('EMA_20', pd.Series(np.nan, index=plan_df.index)),
+                plan_df.get('high', pd.Series(np.nan, index=plan_df.index))
+            ],
+            axis=1
+        )
+        plan_df['Stop_Loss'] = sl_candidates.max(axis=1, skipna=True) + atr_buffer
+        plan_df['Risk_per_Share'] = (plan_df['Stop_Loss'] - plan_df['Entry_Price']).clip(lower=0)
+        plan_df['Target_1'] = plan_df['Entry_Price'] - plan_df['Risk_per_Share']
+        plan_df['Target_2'] = plan_df['Entry_Price'] - (2 * plan_df['Risk_per_Share'])
+
+    plan_df['Qty_by_Value'] = np.floor(position_value / plan_df['Entry_Price']).replace([np.inf, -np.inf], 0)
+    plan_df['Qty_by_Risk'] = np.floor(risk_per_trade / plan_df['Risk_per_Share'].replace(0, np.nan)).replace([np.inf, -np.inf], 0)
+    plan_df['Recommended_Qty'] = np.minimum(plan_df['Qty_by_Value'].fillna(0), plan_df['Qty_by_Risk'].fillna(0)).astype(int)
+    plan_df['Capital_Used'] = plan_df['Recommended_Qty'] * plan_df['Entry_Price']
+    plan_df['Risk_Amount'] = plan_df['Recommended_Qty'] * plan_df['Risk_per_Share']
+    plan_df['R2_Profit'] = plan_df['Recommended_Qty'] * (2 * plan_df['Risk_per_Share'])
+    return plan_df
+
+
 def market_snapshot():
 
     summary = st.sidebar.radio("Choose option", options=['Summary', 'Index Snapshot'], horizontal=True)
@@ -997,14 +1129,14 @@ def market_snapshot():
                             with chart_col1:
                                 st.plotly_chart(
                                     create_opportunity_score_chart(opportunities_df), 
-                                    use_container_width=True,
+                                    width='stretch',
                                     config={'displayModeBar': False}
                                 )
                             
                             with chart_col2:
                                 st.plotly_chart(
                                     create_percentile_scatter_chart(analysis_df), 
-                                    use_container_width=True,
+                                    width='stretch',
                                     config={'displayModeBar': False}
                                 )
                         
@@ -1078,7 +1210,7 @@ def market_snapshot():
                     if chart_type in ["📈 Interactive Charts", "📊 Both Tables & Charts"]:
                         st.plotly_chart(
                             create_trend_analysis_chart(analysis_df), 
-                            use_container_width=True,
+                            width='stretch',
                             config={'displayModeBar': False}
                         )
                     
@@ -1170,7 +1302,7 @@ def market_snapshot():
                             if chart_type in ["📈 Interactive Charts", "📊 Both Tables & Charts"]:
                                 st.plotly_chart(
                                     create_historical_time_series(selected_index, historical_data),
-                                    use_container_width=True,
+                                    width='stretch',
                                     config={'displayModeBar': False}
                                 )
                             
@@ -1413,6 +1545,119 @@ def market_snapshot():
                     4. Try running the data loading process again
                     """)
         
+        # Ranked screener for market-wide opportunity filtering
+        st.markdown("### Ranked Screener: Top Longs / Top Shorts")
+        try:
+            eod_rank_df = rd.get_table_data(selected_database='nsedata', selected_table='EOD_Summary')
+            screener_top_n = st.slider("Screener rows", min_value=5, max_value=30, value=10, step=5)
+            capital_col1, capital_col2, capital_col3 = st.columns(3)
+            with capital_col1:
+                trading_capital = st.number_input("Trading Capital (₹)", min_value=100000, max_value=50000000, value=500000, step=50000)
+            with capital_col2:
+                position_value = st.number_input("Per Trade Position Value (₹)", min_value=5000, max_value=2000000, value=20000, step=5000)
+            with capital_col3:
+                risk_per_trade = st.number_input("Risk per Trade (₹)", min_value=100, max_value=50000, value=450, step=50)
+
+            max_open_positions = int(trading_capital // position_value) if position_value > 0 else 0
+            st.caption(f"Positioning context: max concurrent positions ~ {max_open_positions} | configured risk/trade: ₹{risk_per_trade:,.0f}")
+
+            top_longs, top_shorts, screener_msg = build_ranked_screener(eod_rank_df, top_n=screener_top_n)
+
+            if screener_msg:
+                st.info(screener_msg)
+            else:
+                eod_latest_levels = (
+                    eod_rank_df.sort_values('timestamp')
+                    .drop_duplicates(subset='Symbol', keep='last')
+                    [['Symbol', 'high', 'low', 'EMA_20', 'ATR', 'Curr_Supp', 'Curr_Res']]
+                )
+                top_longs = add_trade_plan_columns(
+                    top_longs.merge(
+                        eod_latest_levels,
+                        on='Symbol',
+                        how='left'
+                    ),
+                    direction='long',
+                    position_value=position_value,
+                    risk_per_trade=risk_per_trade
+                )
+                top_shorts = add_trade_plan_columns(
+                    top_shorts.merge(
+                        eod_latest_levels,
+                        on='Symbol',
+                        how='left'
+                    ),
+                    direction='short',
+                    position_value=position_value,
+                    risk_per_trade=risk_per_trade
+                )
+
+                long_col, short_col = st.columns(2)
+
+                with long_col:
+                    st.markdown("**Top Longs**")
+                    if top_longs.empty:
+                        st.write("No long candidates for current threshold.")
+                    else:
+                        long_display = top_longs[
+                            [
+                                'Symbol', 'close', 'Signal_Confidence', 'Trade_Bias', 'Trend_Label',
+                                'Entry_Price', 'Stop_Loss', 'Target_1', 'Target_2',
+                                'Risk_per_Share', 'Recommended_Qty', 'Capital_Used', 'Risk_Amount', 'R2_Profit'
+                            ]
+                        ].copy()
+                        st.dataframe(
+                            long_display.style.background_gradient(cmap='RdYlGn', subset=['Signal_Confidence']).format(
+                                {
+                                    'close': '{:.2f}',
+                                    'Signal_Confidence': '{:.1f}',
+                                    'Entry_Price': '{:.2f}',
+                                    'Stop_Loss': '{:.2f}',
+                                    'Target_1': '{:.2f}',
+                                    'Target_2': '{:.2f}',
+                                    'Risk_per_Share': '{:.2f}',
+                                    'Capital_Used': '₹{:,.0f}',
+                                    'Risk_Amount': '₹{:,.0f}',
+                                    'R2_Profit': '₹{:,.0f}'
+                                }
+                            ),
+                            hide_index=True,
+                            width='stretch'
+                        )
+
+                with short_col:
+                    st.markdown("**Top Shorts**")
+                    if top_shorts.empty:
+                        st.write("No short candidates for current threshold.")
+                    else:
+                        short_display = top_shorts[
+                            [
+                                'Symbol', 'close', 'Signal_Confidence', 'Trade_Bias', 'Trend_Label',
+                                'Entry_Price', 'Stop_Loss', 'Target_1', 'Target_2',
+                                'Risk_per_Share', 'Recommended_Qty', 'Capital_Used', 'Risk_Amount', 'R2_Profit'
+                            ]
+                        ].copy()
+                        st.dataframe(
+                            short_display.style.background_gradient(cmap='RdYlGn_r', subset=['Signal_Confidence']).format(
+                                {
+                                    'close': '{:.2f}',
+                                    'Signal_Confidence': '{:.1f}',
+                                    'Entry_Price': '{:.2f}',
+                                    'Stop_Loss': '{:.2f}',
+                                    'Target_1': '{:.2f}',
+                                    'Target_2': '{:.2f}',
+                                    'Risk_per_Share': '{:.2f}',
+                                    'Capital_Used': '₹{:,.0f}',
+                                    'Risk_Amount': '₹{:,.0f}',
+                                    'R2_Profit': '₹{:,.0f}'
+                                }
+                            ),
+                            hide_index=True,
+                            width='stretch'
+                        )
+        except Exception as e:
+            st.error(f"Unable to build ranked screener: {str(e)}")
+
         # Trading Recommendations
         st.markdown("### 💡 Trading Recommendations")
 
